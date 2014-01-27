@@ -1,0 +1,107 @@
+NetFlow templates
+
+JUNOS 11.4R7.5 - v10 (IPFIX)
+  0 -   8,  4 I, [0-3]   - IPv4 source address
+  1 -  12,  4 I, [4-7]   - IPv4 destination address
+  2 -   5,  1 B, [8]     - Type of service
+  3 -   4,  1 B, [9]     - IP protocol
+  4 -   7,  2 H, [10-11] - TCP/UDP source port
+  5 -  11,  2 H, [12-13] - TCP/UDP destination port
+  6 -  32,  2 H, [14-15] - ICMP type and code
+  7 -  10,  4 I, [16-19] - SNMP ID of input interface
+  8 -   9,  1 B, [20]    - Source mask
+  9 -  13,  1 B, [21]    - Destination mask
+ 10 -  16,  4 I, [22-25] - Source ASN
+ 11 -  17,  4 I, [26-29] - Destination ASN
+ 12 -  15,  4 I, [30-33] - IPv4 next-hop address
+ 13 -   6,  1 B, [34]    - TCP flags
+ 14 -  14,  4 I, [35-38] - SNMP ID of output interface
+ 15 -   1,  8 Q, [39-46] - Number of bytes in a flow
+ 16 -   2,  8 Q, [47-54] - Number of packets in a flow
+ 17 - 152,  8 Q, [55-62] - Minimum TTL (time to live)
+ 18 - 153,  8 Q, [63-70] - Maximum TTL (time to live)
+ 19 - 136,  1 B, [71]    -
+
+Cisco 860 15.3(3) - v9 (flow-export)
+  0 -  21,  4 I, [0-3]   - System uptime at the last packet from a flow
+  1 -  22,  4 I, [4-7]   - System uptime at the first packet from a flow
+  2 -   1,  4 I, [8-11]  - Number of bytes in a flow
+  3 -   2,  4 I, [12-15] - Number of packets in a flow
+  4 -  10,  2 H, [16-17] - SNMP ID of input interface
+  5 -  14,  2 H, [18-19] - SNMP ID of output interface
+  6 -   8,  4 I, [20-23] - IPv4 source address
+  7 -  12,  4 I, [24-27] - IPv4 destination address
+  8 -   4,  1 B, [28]    - IP protocol
+  9 -   5,  1 B, [29]    - Type of service
+ 10 -   7,  2 H, [30-31] - TCP/UDP source port
+ 11 -  11,  2 H, [32-33] - TCP/UDP destination port
+ 12 -  48,  1 B, [34]    -
+ 13 -  51,  1 B, [35]    -
+ 14 -  15,  4 I, [36-39] - IPv4 next-hop address
+ 15 -  13,  1 B, [40]    - Destination mask
+ 16 -   9,  1 B, [41]    - Source mask
+ 17 -   6,  1 B, [42]    - TCP flags
+ 18 -  61,  1 B, [43]    -
+
+Cisco 860 15.3(3) - v9 (flow exporter/monitor, record netflow ipv4 original-output)
+  0 -   8,  4 I, [0-3]   - IPv4 source address
+  1 -  12,  4 I, [4-7]   - IPv4 destination address
+  2 -  48,  4 I, [8-11]  - Flow sampler ID
+  3 -  14,  4 I, [12-15] - SNMP ID of output interface
+  4 -   7,  2 H, [16-17] - TCP/UDP source port
+  5 -  11,  2 H, [18-19] - TCP/UDP destination port
+  6 -   5,  1 B, [20]    - Type of service
+  7 -   4,  1 B, [21]    - IP protocol
+  8 -   9,  1 B, [22]    - Source mask
+  9 -  13,  1 B, [23]    - Destination mask
+ 10 -   6,  1 B, [24]    - TCP flags
+ 11 -  16,  2 H, [25-26] - Source ASN
+ 12 -  17,  2 H, [27-28] - Destination ASN
+ 13 -  15,  4 I, [29-32] - IPv4 next-hop address
+ 14 -   1,  4 I, [33-36] - Number of bytes in a flow
+ 15 -   2,  4 I, [37-40] - Number of packets in a flow
+ 16 -  22,  4 I, [41-44] - System uptime at the first packet from a flow
+ 17 -  21,  4 I, [45-48] - System uptime at the last packet from a flow
+ 18 -  10,  4 I, [49-52] - SNMP ID of input interface
+
+Cisco 860 15.3(3) - v9 (flow exporter/monitor, record netflow ipv6 original-output)
+  0 -  27, 16 Q, [0-15]  - IPv6 source address
+  1 -  28, 16 Q, [16-31] - IPv6 destination address
+  2 -  64,  4 I, [32-35] - IPv6 options headers
+  3 -  48,  4 I, [36-39] - Flow sampler ID
+  4 -  14,  4 I, [40-43] - SNMP ID of output interface
+  5 -   7,  2 H, [44-45] - TCP/UDP source port
+  6 -  11,  2 H, [46-47] - TCP/UDP destination port
+  7 -  31,  3 _, [48-50] - IPv6 flow label
+  8 -  61,  1 B, [51]    - Direction (0 - ingress flow, 1 - egress flow)
+  9 -   4,  1 B, [52]    - IP protocol
+ 10 -   5,  1 B, [53]    - Type of service
+ 11 -  29,  1 B, [54]    - IPv6 source mask
+ 12 -  30,  1 B, [55]    - IPv6 destination mask
+ 13 -   6,  1 B, [56]    - TCP flags
+ 14 -  16,  2 H, [57-58] - Source ASN
+ 15 -  17,  2 H, [59-60] - Destination ASN
+ 16 -   1,  4 I, [61-64] - Number of bytes in a flow
+ 17 -   2,  4 I, [65-68] - Number of packets in a flow
+ 18 -  22,  4 I, [69-72] - System uptime at the first packet from a flow
+ 19 -  21,  4 I, [73-76] - System uptime at the last packet from a flow
+ 20 -  10,  4 I, [77-80] - SNMP ID of input interface
+ 21 -  62, 16 Q, [81-96] - IPv6 next-hop address
+
+Mikrotik v6.7 - v9
+  0 -  21, 4 I, [0-3]   - System uptime at the last packet from a flow
+  1 -  22, 4 I, [4-7]   - System uptime at the first packet from a flow
+  2 -   2, 4 I, [8-11]  - Number of packets in a flow
+  3 -   1, 4 I, [12-15] - Number of bytes in a flow
+  4 -  10, 4 I, [16-19] - SNMP ID of input interface
+  5 -  14, 4 I, [20-23] - SNMP ID of output interface
+  6 -   8, 4 I, [24-27] - IPv4 source address
+  7 -  12, 4 I, [28-31] - IPv4 destination address
+  8 -   4, 1 B, [32]    - IP protocol
+  9 -   5, 1 B, [33]    - Type of service
+ 10 -   7, 2 H, [34-35] - TCP/UDP source port
+ 11 -  11, 2 H, [36-37] - TCP/UDP destination port
+ 12 -  15, 4 I, [38-41] - IPv4 next-hop address
+ 13 -  13, 1 B, [42]    - Destination mask
+ 14 -   9, 1 B, [43]    - Source mask
+ 15 -   6, 1 B, [44]    - TCP flags
