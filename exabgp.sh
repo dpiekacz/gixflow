@@ -1,0 +1,15 @@
+#!/bin/sh
+#
+cd /opt/exabgp/sbin
+
+env exabgp.daemon.daemonize=false \
+ exabgp.daemon.pid=/var/log/exabgp/exabgp.pid \
+ exabgp.daemon.user=root \
+ exabgp.tcp.bind="" \
+ exabgp.tcp.port="179" \
+ exabgp.log.enable=true \
+ exabgp.log.all=false \
+ exabgp.log.destination=/var/log/exabgp/exabgp.log \
+ exabgp.cache.attributes=false \
+ exabgp.cache.nexthops=false \
+ ./exabgp /opt/gixflow/exabgp.conf
