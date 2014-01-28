@@ -10,6 +10,13 @@ import adns
 import sqlite3
 import json
 
+config = {}
+config['listen_port'] = 9000
+config['netflow_queue'] = 20000
+config['netflow_workers'] = 10
+config['forwardto_ip'] = '127.0.0.1'
+config['forwardto_port'] = 2100
+
 class NetflowMessageID:
 	TemplateV9 = 0
 	Template = 2
@@ -209,8 +216,6 @@ def NetflowReceive(h_adns, nf_src_ip, data):
 				nfd_template_v10 = struct.unpack(">" + "H" * (nfdec_pos_size / 2), data[nfdec_pos:nfdec_pos + nfdec_pos_size])
 				nfdec_pos += nfdec_pos_size
 
-				print (nf_tmpl_id, nf_tmpl_field_count, nfd_template_v10)
-
 			elif nf_hdr_info_element_id == NetflowMessageID.Template_Optional:
 				nfdec_pos_size = 6
 				nf_tmpl_id, nf_tmpl_field_count, nf_tmpl_scope_field_count = struct.unpack(">HHH", data[nfdec_pos:nfdec_pos + nfdec_pos_size])
@@ -223,8 +228,6 @@ def NetflowReceive(h_adns, nf_src_ip, data):
 				nfdec_pos_size = nf_tmpl_scope_field_count * 2
 				nfd_template_v10_scope = struct.unpack(">" + "H" * (nf_tmpl_scope_field_count), data[nfdec_pos:nfdec_pos + nfdec_pos_size])
 				nfdec_pos += nfdec_pos_size
-
-				print (nf_tmpl_id, nf_tmpl_field_count, nf_tmpl_scope_field_count, nfd_template_v10_optional, nfd_template_v10_scope)
 
 			elif nf_hdr_info_element_id == NetflowMessageID.FlowRecord_Optional1:
 				nfdec_pos_size = 18
@@ -297,9 +300,7 @@ def NetflowReceive(h_adns, nf_src_ip, data):
 				data_tx = data_tx + struct.pack(">HHHH", 16, 4, 17, 4)
 
 				udpsock_tx = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-				udpsock_tx.sendto(data_tx, ("127.0.0.1", 2100))
-
-				print (nf_tmpl_length, nf_tmpl_id, nf_tmpl_field_count, nfd_template_v9)
+				udpsock_tx.sendto(data_tx, (config['forwardto_ip'], config['forwardto_port']))
 
 			elif nf_hdr_info_element_id == NetflowMessageID.FlowRecord:
 				nfdec_pos_size = 2
@@ -349,7 +350,7 @@ def NetflowReceive(h_adns, nf_src_ip, data):
 					data_tx = data_tx + data[nfdec_pos - nfdec_pos_size:nfdec_pos] + struct.pack(">II", int(src_as), int(dst_as))
 
 				udpsock_tx = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-				udpsock_tx.sendto(data_tx, ("127.0.0.1", 2100))
+				udpsock_tx.sendto(data_tx, (config['forwardto_ip'], config['forwardto_port']))
 
 		else:
 			sys.stdout.write("Unknown Netflow packet version: " + str(nf_hdr_version) + ", src ip: " + nf_src_ip + "\n")
@@ -373,7 +374,7 @@ def GIXFlow():
 		sqlite_cur.execute('''CREATE TABLE prefixes (prefix text, asn integer, timestamp integer)''')
 	sqlite_con.close()
 
-	listen_addr = ("", 9000)
+	listen_addr = ("", config['listen_port'])
 	UDPSock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 	UDPSock.bind(listen_addr)
 
@@ -381,7 +382,7 @@ def GIXFlow():
 	stats.daemon = True
 	stats.start()
 
-	for i in range(10):
+	for i in range(config['netflow_workers']):
 		rt = Thread(target = NetFlowRecvWorker)
 		rt.daemon = True
 		rt.start()
@@ -405,7 +406,7 @@ if __name__ == '__main__':
 	if len(sys.argv) == 2:
 		if sys.argv[1] == 'start':
 			rtree = localIPtable()
-			recvqueue = Queue.Queue(maxsize = 20000)
+			recvqueue = Queue.Queue(maxsize = config['netflow_queue'])
 			daemon = GIXFlowDaemon('/opt/gixflow/gixflow.pid', stdout='/opt/gixflow/gixflow.log', stderr='/opt/gixflow/gixflow.log')
 			daemon.start()
 		elif  sys.argv[1] == 'stop':
@@ -416,7 +417,7 @@ if __name__ == '__main__':
 			daemon.restart()
 		elif  sys.argv[1] == 'exabgp':
 			rtree = localIPtable()
-			recvqueue = Queue.Queue(maxsize = 20000)
+			recvqueue = Queue.Queue(maxsize = config['netflow_queue'])
 			GIXFlow()
 		else:
 			print "Unknown command"

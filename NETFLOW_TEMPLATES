@@ -64,7 +64,7 @@ Cisco 860 15.3(3) - v9 (flow exporter/monitor, record netflow ipv4 original-outp
  17 -  21,  4 I, [45-48] - System uptime at the last packet from a flow
  18 -  10,  4 I, [49-52] - SNMP ID of input interface
 
-Cisco 860 15.3(3) - v9 (flow exporter/monitor, record netflow ipv6 original-output)
+Cisco 860 15.3(3)M1-15.4(1)T - v9/v10 (flow exporter/monitor, record netflow ipv6 original-output)
   0 -  27, 16 Q, [0-15]  - IPv6 source address
   1 -  28, 16 Q, [16-31] - IPv6 destination address
   2 -  64,  4 I, [32-35] - IPv6 options headers
