@@ -1,0 +1,15 @@
+Version explained:
+ major : codebase
+ minor : increase on new features
+ bug   : increase on bug fixes
+
+Version 0.1.x - 25th May 2014
+ * Adding CHANGELOG file
+
+Version 0.1.x - 27/28th January 2014
+ * Adding NETFLOW_TEMPLATES and RFCS files
+ * Importing the rest of files
+ * Adding config options
+
+Version 0.1.0 - 9th of January 2014
+ * Initial export to GitHub

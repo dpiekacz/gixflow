@@ -1,4 +1,4 @@
-GIXFLOW is a part of a BGP route collector project http://gix.net.pl
+GIXFLOW is a part of a GIX project http://gix.net.pl
 The GIXFLOW code is subject to the following license:
 
 /* Copyright (c) 2013-2014, Daniel Piekacz <daniel@piekacz.tel>
@@ -45,7 +45,7 @@ The Python binding code is subject to this license:
  */
 
 This underlying radix tree code is derived from MRT (http://www.mrtd.net/) 
-and is subject to the following license:  
+and is subject to the following license:
 
 /*
  * Copyright (c) 1999-2000
