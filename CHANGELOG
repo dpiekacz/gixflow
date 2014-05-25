@@ -4,12 +4,14 @@ Version explained:
  bug   : increase on bug fixes
 
 Version 0.1.x - 25th May 2014
- * Adding CHANGELOG file
+ * Adding CHANGELOG file.
+ * Making code PEP8 compliant with a single exception E501 (line too long).
+ * Adding config options for other settings.
 
 Version 0.1.x - 27/28th January 2014
- * Adding NETFLOW_TEMPLATES and RFCS files
- * Importing the rest of files
- * Adding config options
+ * Adding NETFLOW_TEMPLATES and RFCS files.
+ * Importing the rest of files.
+ * Adding config options.
 
 Version 0.1.0 - 9th of January 2014
- * Initial export to GitHub
+ * Initial export to GitHub.
