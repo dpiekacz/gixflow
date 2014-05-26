@@ -3,6 +3,12 @@ Version explained:
  minor : increase on new features
  bug   : increase on bug fixes
 
+Version 0.1.x - 26th May 2014
+ * Adding support for IPv6.
+ * Splitting NetFlow IPv4 and IPv6 receivers to separate threads.
+ * Accounting received NetFlow packets.
+ * Adding locks when adding prefixes to the prefix cache.
+
 Version 0.1.x - 25th May 2014
  * Adding CHANGELOG file.
  * Making code PEP8 compliant with a single exception E501 (line too long).

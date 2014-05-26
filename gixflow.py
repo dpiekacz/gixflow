@@ -17,35 +17,44 @@ import sqlite3
 import json
 
 #
-# Configuration section
+# Configuration section.
 #
 config = {}
 
-# PID file location
+# PID file location.
 config["pid_file"] = "/opt/gixflow/gixflow.pid"
 
-# Logging and debugging
+# Logging and debugging.
 config["log_file"] = "/opt/gixflow/log_gixflow"
 config["debug"] = True
 
-# DB file location
+# DB file location.
 config["db_file"] = "/opt/gixflow/gixflow.db"
 
-# Listen on the port for NetFlow data
+# Listen on the given IP address and port.
+# Set to blank to bind to all IP addresses.
 config["listen_port"] = 9000
 
-# Size of the NetFlow queue
+config["listen_ipv4"] = "178.32.56.59"
+config["listen_ipv4_enable"] = True
+
+config["listen_ipv6"] = "2001:41d0:2:541b::2"
+config["listen_ipv6_enable"] = True
+
+# Size of the NetFlow queue.
 config["netflow_queue"] = 50000
 
-# Number of NetFlow workers
+# Number of NetFlow workers.
 config["netflow_workers"] = 50
 
-# Enable/Disable: Forwarding NetFlow data to another collector
+# Enable/Disable: Forwarding NetFlow data to another collector.
 config["forwardto_enable"] = False
 config["forwardto_ip"] = "127.0.0.1"
 config["forwardto_port"] = 2100
 
-# Enable/Disable: IP2ASN lookup using Cymru DNS service
+# Enable/Disable: IP2ASN lookup using Cymru DNS service.
+# Keep in mind that the process can generate thousands of DNS queries
+# to your local DNS resolver which will forward them to Cymru DNS servers.
 config["ip2asn"] = False
 
 #
@@ -54,7 +63,7 @@ config["ip2asn"] = False
 Running = False
 
 # NetFlow sources
-flow_sources = {}
+netflow_sources = {}
 
 
 class NetflowMessageID:
@@ -72,77 +81,101 @@ class ASNtype:
 
 
 class PrefixExpire:
-    Never = 0           # never - for RFC special IP networks and known prefixes
-    Default = 2419200   # 4 weeks - for prefixes where DNS lookup returned data
-    Short = 172800      # 2 days - for prefixes where DNS lookup returned no data or failed
+    # never - for RFC special IP networks and known prefixes
+    Never = 0
+    # 4 weeks - for prefixes where DNS lookup returned data
+    Default = 2419200
+    # 2 hours - for prefixes where DNS lookup returned no data or failed
+    Short = 7200
 
 
 def RFCPrefixTable():
     prefix_cache = radix.Radix()
 
-    prefix = prefix_cache.add("0.0.0.0/8")             # Current network (only valid as source address)
+    # Current network (only valid as source address)
+    prefix = prefix_cache.add("0.0.0.0/8")
     prefix.data["asn"] = ASNtype.Unknown
     prefix.data["exp"] = PrefixExpire.Never
-    prefix = prefix_cache.add("10.0.0.0/8")            # Private network
+    # Private network
+    prefix = prefix_cache.add("10.0.0.0/8")
     prefix.data["asn"] = ASNtype.Unknown
     prefix.data["exp"] = PrefixExpire.Never
-    prefix = prefix_cache.add("127.0.0.0/8")           # Loopback
+    # Loopback
+    prefix = prefix_cache.add("127.0.0.0/8")
     prefix.data["asn"] = ASNtype.Unknown
     prefix.data["exp"] = PrefixExpire.Never
-    prefix = prefix_cache.add("169.254.0.0/16")        # Link-local
+    # Link-local
+    prefix = prefix_cache.add("169.254.0.0/16")
     prefix.data["asn"] = ASNtype.Unknown
     prefix.data["exp"] = PrefixExpire.Never
-    prefix = prefix_cache.add("172.16.0.0/12")         # Private network
+    # Private network
+    prefix = prefix_cache.add("172.16.0.0/12")
     prefix.data["asn"] = ASNtype.Unknown
     prefix.data["exp"] = PrefixExpire.Never
-    prefix = prefix_cache.add("192.0.0.0/24")          # IETF Protocol Assignments
+    # IETF Protocol Assignments
+    prefix = prefix_cache.add("192.0.0.0/24")
     prefix.data["asn"] = ASNtype.Unknown
     prefix.data["exp"] = PrefixExpire.Never
-    prefix = prefix_cache.add("192.0.2.0/24")          # TEST-NET-1, documentation and examples
+    # TEST-NET-1, documentation and examples
+    prefix = prefix_cache.add("192.0.2.0/24")
     prefix.data["asn"] = ASNtype.Unknown
     prefix.data["exp"] = PrefixExpire.Never
-    prefix = prefix_cache.add("192.168.0.0/16")        # Private network
+    # Private network
+    prefix = prefix_cache.add("192.168.0.0/16")
     prefix.data["asn"] = ASNtype.Unknown
     prefix.data["exp"] = PrefixExpire.Never
-    prefix = prefix_cache.add("198.18.0.0/15")         # Network benchmark tests
+    # Network benchmark tests
+    prefix = prefix_cache.add("198.18.0.0/15")
     prefix.data["asn"] = ASNtype.Unknown
     prefix.data["exp"] = PrefixExpire.Never
-    prefix = prefix_cache.add("198.51.100.0/24")       # TEST-NET-2, documentation and examples
+    # TEST-NET-2, documentation and examples
+    prefix = prefix_cache.add("198.51.100.0/24")
     prefix.data["asn"] = ASNtype.Unknown
     prefix.data["exp"] = PrefixExpire.Never
-    prefix = prefix_cache.add("203.0.113.0/24")        # TEST-NET-3, documentation and examples
+    # TEST-NET-3, documentation and examples
+    prefix = prefix_cache.add("203.0.113.0/24")
     prefix.data["asn"] = ASNtype.Unknown
     prefix.data["exp"] = PrefixExpire.Never
-    prefix = prefix_cache.add("224.0.0.0/4")           # IP multicast (former Class D network)
+    # IP multicast (former Class D network)
+    prefix = prefix_cache.add("224.0.0.0/4")
     prefix.data["asn"] = ASNtype.Unknown
     prefix.data["exp"] = PrefixExpire.Never
-    prefix = prefix_cache.add("240.0.0.0/4")           # Reserved (former Class E network)
-    prefix.data["asn"] = ASNtype.Unknown
-    prefix.data["exp"] = PrefixExpire.Never
-
-    prefix = prefix_cache.add("2001:10::/28")          # Overlay Routable Cryptographic Hash IDentifiers (ORCHID) addresses
-    prefix.data["asn"] = ASNtype.Unknown
-    prefix.data["exp"] = PrefixExpire.Never
-    prefix = prefix_cache.add("2001:db8::/32")         # Documentation and examples
-    prefix.data["asn"] = ASNtype.Unknown
-    prefix.data["exp"] = PrefixExpire.Never
-    prefix = prefix_cache.add("3ffe::/16")             # The second instance of the 6bone experimental network
-    prefix.data["asn"] = ASNtype.Unknown
-    prefix.data["exp"] = PrefixExpire.Never
-    prefix = prefix_cache.add("5f00::/8")              # The first instance of the 6bone experimental network
-    prefix.data["asn"] = ASNtype.Unknown
-    prefix.data["exp"] = PrefixExpire.Never
-    prefix = prefix_cache.add("fc00::/7")              # Unique-local
-    prefix.data["asn"] = ASNtype.Unknown
-    prefix.data["exp"] = PrefixExpire.Never
-    prefix = prefix_cache.add("fe80::/10")             # Link-local
+    # Reserved (former Class E network)
+    prefix = prefix_cache.add("240.0.0.0/4")
     prefix.data["asn"] = ASNtype.Unknown
     prefix.data["exp"] = PrefixExpire.Never
 
-    prefix = prefix_cache.add("192.175.48.0/24")       # AS112 DNS
+    # Overlay Routable Cryptographic Hash IDentifiers (ORCHID) addresses
+    prefix = prefix_cache.add("2001:10::/28")
+    prefix.data["asn"] = ASNtype.Unknown
+    prefix.data["exp"] = PrefixExpire.Never
+    # Documentation and examples
+    prefix = prefix_cache.add("2001:db8::/32")
+    prefix.data["asn"] = ASNtype.Unknown
+    prefix.data["exp"] = PrefixExpire.Never
+    # The second instance of the 6bone experimental network
+    prefix = prefix_cache.add("3ffe::/16")
+    prefix.data["asn"] = ASNtype.Unknown
+    prefix.data["exp"] = PrefixExpire.Never
+    # The first instance of the 6bone experimental network
+    prefix = prefix_cache.add("5f00::/8")
+    prefix.data["asn"] = ASNtype.Unknown
+    prefix.data["exp"] = PrefixExpire.Never
+    # Unique-local
+    prefix = prefix_cache.add("fc00::/7")
+    prefix.data["asn"] = ASNtype.Unknown
+    prefix.data["exp"] = PrefixExpire.Never
+    # Link-local
+    prefix = prefix_cache.add("fe80::/10")
+    prefix.data["asn"] = ASNtype.Unknown
+    prefix.data["exp"] = PrefixExpire.Never
+
+    # AS112 DNS
+    prefix = prefix_cache.add("192.175.48.0/24")
     prefix.data["asn"] = 112
     prefix.data["exp"] = PrefixExpire.Never
-    prefix = prefix_cache.add("2620:4f:8000::/48")     # AS112 DNS
+    # AS112 DNS
+    prefix = prefix_cache.add("2620:4f:8000::/48")
     prefix.data["asn"] = 112
     prefix.data["exp"] = PrefixExpire.Never
 
@@ -157,59 +190,79 @@ def RFCPrefixTable():
     return prefix_cache
 
 
-def IP2ASNresolver(h_adns, ip_rev, ip_net):
+def IP2ASNresolver(adns_resolver, ip_addr):
     global prefix_cache
 
-    rnode = prefix_cache.search_best(ip_net)
-    ts = int(time.time())
-    if rnode is None:
-        qa = h_adns.synchronous(ip_rev + ".origin.asn.cymru.com", adns.rr.TXT)
-        if qa is not None and qa[3] != ():
-            for i in range(0, len(qa[3])):
-                asn = int(qa[3][i][0].split("|")[0].split(" ")[0])
-                ip_prefix = qa[3][i][0].split("|")[1].split(" ")[1]
-                prefix = prefix_cache.add(ip_prefix)
-                prefix.data["asn"] = asn
-                prefix.data["exp"] = ts + PrefixExpire.Default
-            asn = prefix_cache.search_best(ip_net).data["asn"]
-        else:
+    try:
+        ip_addr_ar = ip_addr.split(".")
+        ip_net = ip_addr_ar[0] + "." + ip_addr_ar[1] + "." + ip_addr_ar[2] + ".0"
+        ip_rev = "0." + ip_addr_ar[2] + "." + ip_addr_ar[1] + "." + ip_addr_ar[0]
+
+        ts = int(time.time())
+        rnode = prefix_cache.search_best(ip_addr)
+        if rnode is None:
+            qa = None
             qac = 0
-            while ((qa is None or qa[3] == ()) and qac <= 2):
-                qa = h_adns.synchronous(ip_rev + ".origin.asn.cymru.com", adns.rr.TXT)
+
+            while ((qa is None or qa[3] == ()) and qac <= 1):
+                qa = adns_resolver.synchronous(ip_rev + ".origin.asn.cymru.com", adns.rr.TXT)
                 qac += 1
 
             if qa is not None and qa[3] != ():
                 for i in range(0, len(qa[3])):
                     asn = int(qa[3][i][0].split("|")[0].split(" ")[0])
                     ip_prefix = qa[3][i][0].split("|")[1].split(" ")[1]
-                    prefix = prefix_cache.add(ip_prefix)
-                    prefix.data["asn"] = asn
-                    prefix.data["exp"] = ts + PrefixExpire.Default
-                asn = prefix_cache.search_best(ip_net).data["asn"]
+
+                    with lock:
+                        prefix = prefix_cache.add(ip_prefix)
+                        prefix.data["asn"] = asn
+                        prefix.data["exp"] = ts + PrefixExpire.Default
+
+                asn = prefix_cache.search_best(ip_addr).data["asn"]
+
             else:
                 asn = ASNtype.Unknown
-                prefix = prefix_cache.add(ip_net + "/24")
-                prefix.data["asn"] = ASNtype.Unknown
-                prefix.data["exp"] = ts + PrefixExpire.Short
-    else:
-        if rnode.data["exp"] != 0 and rnode.data["exp"] < ts:
-            prefix_cache.delete(rnode.prefix)
-            asn = IP2ASNresolver(h_adns, ip_rev, ip_net)
+
+                with lock:
+                    prefix = prefix_cache.add(ip_net + "/24")
+                    prefix.data["asn"] = asn
+                    prefix.data["exp"] = ts + PrefixExpire.Short
+
         else:
-            asn = rnode.data["asn"]
+            if rnode.data["exp"] == 0 or rnode.data["exp"] >= ts:
+                asn = rnode.data["asn"]
+            else:
+                prefix_cache.delete(rnode.prefix)
+                asn = IP2ASNresolver(adns_resolver, ip_addr)
+
+    except:
+        asn = ASNtype.Unknown
+
+        with lock:
+            prefix = prefix_cache.add(ip_net + "/24")
+            prefix.data["asn"] = asn
+            prefix.data["exp"] = ts + PrefixExpire.Short
+
+        if config["debug"]:
+            e = str(sys.exc_info())
+            sys.stdout.write("I2A - exception: " + e + ", ip: " + ip_addr + ".\n")
+            sys.stdout.flush()
+
+        pass
+
     return int(asn)
 
 
 def Stats_Worker():
     global Running, prefix_cache
 
-    swi = 0
+    swi = 1
 
     while Running:
         time.sleep(10)
 
-        if swi == 60:
-            swi = 0
+        if swi == 12:
+            swi = 1
             if config["debug"]:
                 sys.stdout.write("SW - Dumping prefix table to SQLite database.\n")
                 sys.stdout.flush()
@@ -231,20 +284,24 @@ def Stats_Worker():
                 sys.stdout.write("SW - Nb of prefixes: " + str(len(prefixes)) + ", swi: " + str(swi) + ".\n")
                 sys.stdout.flush()
 
+                for ipaddr in netflow_sources.keys():
+                    sys.stdout.write("SW - " + ipaddr + ", packets: " + str(netflow_sources[ipaddr]["packets"]) + ".\n")
+                    sys.stdout.flush()
+
 
 def NetFlow_Worker():
     if config["ip2asn"]:
-        h_adns = adns.init()
+        adns_resolver = adns.init()
 
     while Running:
         try:
             while Running:
                 nf_src_ip, data = netflow_queue.get(block=True, timeout=10)
                 if config["ip2asn"]:
-                    NetFlow_Processor(h_adns, nf_src_ip, data)
+                    NetFlow_Processor(adns_resolver, nf_src_ip, data)
                 else:
                     NetFlow_Processor(0, nf_src_ip, data)
-                    netflow_queue.task_done()
+                netflow_queue.task_done()
 
         except Queue.Empty:
             if config["debug"]:
@@ -260,7 +317,64 @@ def NetFlow_Worker():
             pass
 
 
-def NetFlow_Processor(h_adns, nf_src_ip, data):
+def NetFlow_Receiver(netrecvd):
+    global Running, netflow_sources
+
+    if netrecvd == "ipv4":
+        listen_ipv4 = (config["listen_ipv4"], config["listen_port"])
+        UDPSockv4 = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        UDPSockv4.bind(listen_ipv4)
+    elif netrecvd == "ipv6":
+        listen_ipv6 = (config["listen_ipv6"], config["listen_port"])
+        UDPSockv6 = socket.socket(socket.AF_INET6, socket.SOCK_DGRAM)
+        UDPSockv6.bind(listen_ipv6)
+    else:
+        if config["debug"]:
+            sys.stdout.write("NR - NetFlow receiver must be started with a valid argument.\n")
+            sys.stdout.flush()
+        Running = False
+
+    while Running:
+        try:
+            if netrecvd == "ipv4":
+                while Running:
+                    data, ipaddr = UDPSockv4.recvfrom(8192)
+                    netflow_queue.put([ipaddr[0], data], block=False)
+
+                    with lock:
+                        if ipaddr[0] in netflow_sources.keys():
+                            netflow_sources[ipaddr[0]]["packets"] = netflow_sources[ipaddr[0]]["packets"] + 1
+                        else:
+                            netflow_sources[ipaddr[0]] = {}
+                            netflow_sources[ipaddr[0]]["packets"] = 1
+
+            else:
+                while Running:
+                    data, ipaddr = UDPSockv6.recvfrom(8192)
+                    netflow_queue.put([ipaddr[0], data], block=False)
+
+                    with lock:
+                        if ipaddr[0] in netflow_sources.keys():
+                            netflow_sources[ipaddr[0]]["packets"] = netflow_sources[ipaddr[0]]["packets"] + 1
+                        else:
+                            netflow_sources[ipaddr[0]] = {}
+                            netflow_sources[ipaddr[0]]["packets"] = 1
+
+        except Queue.Full:
+            if config["debug"]:
+                sys.stdout.write("NR - Flow queue is full.\n")
+                sys.stdout.flush()
+            pass
+
+        except:
+            if config["debug"]:
+                e = str(sys.exc_info())
+                sys.stdout.write("GF - exception: " + e + "\n")
+                sys.stdout.flush()
+            pass
+
+
+def NetFlow_Processor(adns_resolver, nf_src_ip, data):
     try:
         nfdec_pos = 0
 
@@ -332,21 +446,13 @@ def NetFlow_Processor(h_adns, nf_src_ip, data):
                     # ip = IPNetwork(nfi_dst_ip + "/" + str(nfi_dst_mask))
                     # nfi_dst_net = str(ip.network) + "/" + str(nfi_dst_mask)
 
-                    src_ip = nfi_src_ip.split(".")
-                    src_ip_net = src_ip[0] + "." + src_ip[1] + "." + src_ip[2] + ".0"
-                    src_ip_rev = "0." + src_ip[2] + "." + src_ip[1] + "." + src_ip[0]
-
-                    dst_ip = nfi_dst_ip.split(".")
-                    dst_ip_net = dst_ip[0] + "." + dst_ip[1] + "." + dst_ip[2] + ".0"
-                    dst_ip_rev = "0." + dst_ip[2] + "." + dst_ip[1] + "." + dst_ip[0]
-
                     if config["ip2asn"]:
-                        src_as = IP2ASNresolver(h_adns, src_ip_rev, src_ip_net)
-                        dst_as = IP2ASNresolver(h_adns, dst_ip_rev, dst_ip_net)
+                        src_as = IP2ASNresolver(adns_resolver, nfi_src_ip)
+                        dst_as = IP2ASNresolver(adns_resolver, nfi_dst_ip)
 
             else:
                 if config["debug"]:
-                    sys.stdout.write("NFP - Unknown NetFlow message type: " + str(nf_hdr_info_element_id) + ".\n")
+                    sys.stdout.write("NFP - Unknown NetFlow message type: " + str(nf_hdr_info_element_id) + ", src ip: " + nf_src_ip + ".\n")
                     sys.stdout.flush()
 
         elif nf_hdr_version == 9:
@@ -410,17 +516,9 @@ def NetFlow_Processor(h_adns, nf_src_ip, data):
                     # nfi_src_mask = nf_data[14]
                     # nfi_tcp_flags = nf_data[15]
 
-                    src_ip = nfi_src_ip.split(".")
-                    src_ip_net = src_ip[0] + "." + src_ip[1] + "." + src_ip[2] + ".0"
-                    src_ip_rev = "0." + src_ip[2] + "." + src_ip[1] + "." + src_ip[0]
-
-                    dst_ip = nfi_dst_ip.split(".")
-                    dst_ip_net = dst_ip[0] + "." + dst_ip[1] + "." + dst_ip[2] + ".0"
-                    dst_ip_rev = "0." + dst_ip[2] + "." + dst_ip[1] + "." + dst_ip[0]
-
                     if config["ip2asn"]:
-                        src_as = IP2ASNresolver(h_adns, src_ip_rev, src_ip_net)
-                        dst_as = IP2ASNresolver(h_adns, dst_ip_rev, dst_ip_net)
+                        src_as = IP2ASNresolver(adns_resolver, nfi_src_ip)
+                        dst_as = IP2ASNresolver(adns_resolver, nfi_dst_ip)
 
                     if config["forwardto_enable"]:
                         data_tx = data_tx + data[nfdec_pos - nfdec_pos_size:nfdec_pos] + struct.pack(">II", int(src_as), int(dst_as))
@@ -464,10 +562,6 @@ def GIXFlow():
         sqlite_con.close()
         pass
 
-    listen_addr = ("", config["listen_port"])
-    UDPSock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    UDPSock.bind(listen_addr)
-
     statsd = Thread(target=Stats_Worker)
     statsd.daemon = True
     statsd.start()
@@ -476,24 +570,33 @@ def GIXFlow():
         netflowd = Thread(target=NetFlow_Worker)
         netflowd.daemon = True
         netflowd.start()
+        if config["debug"]:
+            sys.stdout.write("GF - NetFlow worker " + str(i) + " started.\n")
+            sys.stdout.flush()
+
+    if config["listen_ipv4_enable"]:
+        netrecvd = "ipv4"
+        netrecvd4 = Thread(target=NetFlow_Receiver, args=(netrecvd,))
+        netrecvd4.daemon = True
+        netrecvd4.start()
+        if config["debug"]:
+            sys.stdout.write("GF - NetFlow receiver v4 started.\n")
+            sys.stdout.flush()
+
+    if config["listen_ipv6_enable"]:
+        netrecvd = "ipv6"
+        netrecvd6 = Thread(target=NetFlow_Receiver, args=(netrecvd,))
+        netrecvd6.daemon = True
+        netrecvd6.start()
+        if config["debug"]:
+            sys.stdout.write("GF - NetFlow receiver v6 started.\n")
+            sys.stdout.flush()
 
     while Running:
-        try:
-            while Running:
-                data, addr = UDPSock.recvfrom(8192)
-                netflow_queue.put([addr[0], data], block=False)
-
-        except Queue.Full:
-            sys.stdout.write("GF - Flow queue is full.\n")
+        time.sleep(10)
+        if config["debug"]:
+            sys.stdout.write("GF - alive.\n")
             sys.stdout.flush()
-            pass
-
-        except:
-            if config["debug"]:
-                e = str(sys.exc_info())
-                sys.stdout.write("GF - exception: " + e + "\n")
-                sys.stdout.flush()
-            pass
 
 
 class GIXFlowDaemon(daemon):
@@ -504,15 +607,20 @@ class GIXFlowDaemon(daemon):
 if __name__ == '__main__':
     if len(sys.argv) == 2:
         if sys.argv[1] == "start":
+
+            if not config["listen_ipv4_enable"] and not config["listen_ipv6_enable"]:
+                print("You must enable the process to listen at least on one address, IPv4 or IPv6.")
+                sys.exit(2)
+
             Running = True
 
-            # Initialize a prefix cache
+            # Initialize a prefix cache.
             prefix_cache = RFCPrefixTable()
 
-            # Initialize a queue for NetFlow workers
+            # Initialize a queue for NetFlow workers.
             netflow_queue = Queue.Queue(maxsize=config["netflow_queue"])
 
-            # Initialize a lock
+            # Initialize a lock.
             lock = RLock()
 
             if config["debug"]:
@@ -534,22 +642,20 @@ if __name__ == '__main__':
         elif sys.argv[1] == "exabgp":
             Running = True
 
-            # Initialize a prefix cache
+            # Initialize a prefix cache.
             prefix_cache = RFCPrefixTable()
 
-            # Initialize a queue for NetFlow workers
+            # Initialize a queue for NetFlow workers.
             netflow_queue = Queue.Queue(maxsize=config["netflow_queue"])
 
-            # Initialize a lock
+            # Initialize a lock.
             lock = RLock()
 
-            if config["debug"]:
-                sys.stdout.write("MP - Starting as ExaBGP subprocess.\n")
-                sys.stdout.flush()
+            # Starting GIXflow as a foreground process.
             GIXFlow()
 
         else:
-            print("Unknown command")
+            print("Unknown argument")
             sys.exit(2)
 
         sys.exit(0)
