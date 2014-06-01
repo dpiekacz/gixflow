@@ -5,6 +5,7 @@ Version explained:
 
 Version 0.2.x - 1st June 2014
  * Processing NetFlow v1 and v5 flow data.
+ * Bug fixes.
 
 Version 0.2.0 - 1st June 2014
  * Processing NetFlow v9/v10 templates.

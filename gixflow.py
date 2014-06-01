@@ -258,10 +258,10 @@ def NetFlow_Worker():
             while Running:
                 nf_src_ip, data = netflow_queue.get(block=True, timeout=10)
                 if config["ip2asn"]:
-                    NetFlow_Processor(adns_resolver, nf_src_ip, data)
+                    NetFlow_PacketProcessor(adns_resolver, nf_src_ip, data)
 
                 else:
-                    NetFlow_Processor(0, nf_src_ip, data)
+                    NetFlow_PacketProcessor(0, nf_src_ip, data)
                 netflow_queue.task_done()
 
         except Queue.Empty:
@@ -354,7 +354,29 @@ def NetFlow_Receiver(netrecvd):
             pass
 
 
-def NetFlow_Processor(adns_resolver, nf_src_ip, data):
+def NetFlow_FlowProcessor(adns_resolver, nfd):
+    global Running
+
+    if config["ip2asn"]:
+        if nfd["src_ip4"] is not None and nfd["dst_ip4"] is not None:
+            if nfd["src_as"] is None or nfd["src_as"] == ASNtype.Unknown or (nfd["src_as"] >= 64512 and nfd["src_as"] <= 65534) or (nfd["src_as"] >= 4200000000 and nfd["src_as"] <= 4294967294):
+                nfd["src_as"] = IP2ASNresolver(adns_resolver, nfd["src_ip4"])
+
+            if nfd["dst_as"] is None or nfd["dst_as"] == ASNtype.Unknown or (nfd["dst_as"] >= 64512 and nfd["dst_as"] <= 65534) or (nfd["dst_as"] >= 4200000000 and nfd["dst_as"] <= 4294967294):
+                nfd["dst_as"] = IP2ASNresolver(adns_resolver, nfd["dst_ip4"])
+
+        elif nfd["src_ip6"] is not None and nfd["dst_ip6"] is not None:
+            # IP2ASN DNS lookup not supported for IPv6
+            if config["debug"]:
+                sys.stdout.write("NFP/%s/v%s/%s/IP2ASN DNS lookup not supported for IPv6 addresses.\n" % (nfd["msg_src_ip"], nfd["version"], nfd["msg_type"]))
+                sys.stdout.flush()
+
+    # !!! TO BE REMOVED !!!
+    if config["debug"] and nfd["msg_src_ip"] == "82.219.212.158":
+        print(nfd)
+
+
+def NetFlow_PacketProcessor(adns_resolver, nf_src_ip, data):
     global Running
 
     try:
@@ -369,7 +391,119 @@ def NetFlow_Processor(adns_resolver, nf_src_ip, data):
         nfd["version"], = struct.unpack(">H", data[nfdec_pos:nfdec_pos + nfdec_size])
         nfdec_pos += nfdec_size
 
-        if nfd["version"] == 10:
+        if nfd["version"] == 1:
+            # Header
+            # H/Bits  16...31 - Count
+            # I/Bits  32...63 - System Uptime
+            # I/Bits  64...95 - UNIX seconds
+            # I/Bits  96..127 - UNIX nano seconds
+            nfdec_size = 14
+            if (nfd["msg_size"] - nfdec_pos) >= nfdec_size:
+                nfd["count"], nfd["sys_uptime"], nfd["unix_sec"], nfd["unix_nsec"] = struct.unpack(">HIII", data[nfdec_pos:nfdec_pos + nfdec_size])
+                nfdec_pos += nfdec_size
+                print (nfd["count"], nfd["sys_uptime"], nfd["unix_sec"], nfd["unix_nsec"])
+
+            else:
+                if config["debug"]:
+                    sys.stdout.write("NFP/%s/v%s/%s/Not enough data left.\n" % (nfd["msg_src_ip"], nfd["version"], nfd["msg_type"]))
+                    sys.stdout.flush()
+                return
+
+            # Data
+            i = 0
+            while i != nfd["count"]:
+                nfdec_size = 48
+                if (nfd["msg_size"] - nfdec_pos) >= nfdec_size:
+                    nfd_src_ip4, nfd_dst_ip4, nfd_nexthop_ip4, nfd["in_interface"], nfd["out_interface"], nfd["in_packets"], nfd["in_bytes"], nfd["flow_first"], nfd["flow_last"], nfd["src_port"], nfd["dst_port"], nf_pad1, nfd["proto"], nfd["src_tos"], nfd["tcp_flags"], nf_pad2, nf_pad3, nf_pad4, nf_reserved = struct.unpack(">IIIHHIIIIHHHBBBBBBI", data[nfdec_pos:nfdec_pos + nfdec_size])
+                    nfdec_pos += nfdec_size
+                    i += 1
+
+                    nfd["src_ip4"] = socket.inet_ntop(socket.AF_INET, struct.pack("!L", nfd_src_ip4))
+                    nfd["dst_ip4"] = socket.inet_ntop(socket.AF_INET, struct.pack("!L", nfd_dst_ip4))
+                    nfd["nexthop_ip4"] = socket.inet_ntop(socket.AF_INET, struct.pack("!L", nfd_nexthop_ip4))
+
+                else:
+                    if config["debug"]:
+                        sys.stdout.write("NFP/%s/v%s/%s/Not enough data left.\n" % (nfd["msg_src_ip"], nfd["version"], nfd["msg_type"]))
+                        sys.stdout.flush()
+                    return
+
+                NetFlow_FlowProcessor(adns_resolver, nfd)
+
+            with lock:
+                if "." in nfd["msg_src_ip"]:
+                    netflow_sources[nfd["msg_src_ip"]]["v4_packets_processed"] += 1
+                else:
+                    netflow_sources[nfd["msg_src_ip"]]["v6_packets_processed"] += 1
+
+        elif nfd["version"] == 5:
+            # Header
+            # H/Bits  16...31 - Count
+            # I/Bits  32...63 - System Uptime
+            # I/Bits  64...95 - UNIX seconds
+            # I/Bits  96..127 - UNIX nano seconds
+            # I/Bits 128..159 - Sequence Number
+            # B/Bits 160..167 - Engine Type
+            # B/Bits 168..175 - Engine ID
+            # H/Bits 176..191 - Sampling Interval
+            nfdec_size = 22
+            if (nfd["msg_size"] - nfdec_pos) >= nfdec_size:
+                nfd["count"], nfd["sys_uptime"], nfd["unix_sec"], nfd["unix_nsec"], nfd["sequence_number"], nfd["engine_type"], nfd["engine_id"], nfd["sampling_interval"] = struct.unpack(">HIIIIBBH", data[nfdec_pos:nfdec_pos + nfdec_size])
+                nfdec_pos += nfdec_size
+
+            else:
+                if config["debug"]:
+                    sys.stdout.write("NFP/%s/v%s/%s/Not enough data left.\n" % (nfd["msg_src_ip"], nfd["version"], nfd["msg_type"]))
+                    sys.stdout.flush()
+                return
+
+            # Data
+            i = 0
+            while i != nfd["count"]:
+                nfdec_size = 48
+                if (nfd["msg_size"] - nfdec_pos) >= nfdec_size:
+                    nfd_src_ip4, nfd_dst_ip4, nfd_nexthop_ip4, nfd["in_interface"], nfd["out_interface"], nfd["in_packets"], nfd["in_bytes"], nfd["flow_first"], nfd["flow_last"], nfd["src_port"], nfd["dst_port"], nf_pad1, nfd["tcp_flags"], nfd["proto"], nfd["src_tos"], nfd["src_as"], nfd["dst_as"], nfd["src_mask4"], nfd["dst_mask4"], nf_pad2 = struct.unpack(">IIIHHIIIIHHBBBBHHBBH", data[nfdec_pos:nfdec_pos + nfdec_size])
+                    nfdec_pos += nfdec_size
+                    i += 1
+
+                    nfd["src_ip4"] = socket.inet_ntop(socket.AF_INET, struct.pack("!L", nfd_src_ip4))
+                    nfd["dst_ip4"] = socket.inet_ntop(socket.AF_INET, struct.pack("!L", nfd_dst_ip4))
+                    nfd["nexthop_ip4"] = socket.inet_ntop(socket.AF_INET, struct.pack("!L", nfd_nexthop_ip4))
+
+                else:
+                    if config["debug"]:
+                        sys.stdout.write("NFP/%s/v%s/%s/Not enough data left.\n" % (nfd["msg_src_ip"], nfd["version"], nfd["msg_type"]))
+                        sys.stdout.flush()
+                    return
+
+                NetFlow_FlowProcessor(adns_resolver, nfd)
+
+            with lock:
+                if "." in nfd["msg_src_ip"]:
+                    netflow_sources[nfd["msg_src_ip"]]["v4_packets_processed"] += 1
+                else:
+                    netflow_sources[nfd["msg_src_ip"]]["v6_packets_processed"] += 1
+
+        elif nfd["version"] == 9:
+            # H/Bits  16...31 - Count
+            # I/Bits  32...63 - System Uptime
+            # I/Bits  64...95 - UNIX seconds
+            # I/Bits  96..127 - Sequence Number
+            # I/Bits 128..159 - Source ID
+            # H/Bits 160..175 - Element ID
+            # H/Bits 176..191 - Field Length
+            nfdec_size = 22
+            if (nfd["msg_size"] - nfdec_pos) >= nfdec_size:
+                nfd["count"], nfd["sys_uptime"], nfd["unix_sec"], nfd["sequence_number"], nfd["source_id"], nfd["field_info_element_id"], nfd["field_length"] = struct.unpack(">HIIIIHH", data[nfdec_pos:nfdec_pos + nfdec_size])
+                nfdec_pos += nfdec_size
+
+            else:
+                if config["debug"]:
+                    sys.stdout.write("NFP/%s/v%s/%s/Not enough data left.\n" % (nfd["msg_src_ip"], nfd["version"], nfd["msg_type"]))
+                    sys.stdout.flush()
+                return
+
+        elif nfd["version"] == 10:
             # H/Bits  16...31 - Message Length
             # I/Bits  32...63 - Export Timestamp
             # I/Bits  64...95 - Sequence Number
@@ -400,61 +534,6 @@ def NetFlow_Processor(adns_resolver, nf_src_ip, data):
                         sys.stdout.flush()
                     return
 
-        elif nfd["version"] == 9:
-            # H/Bits  16...31 - Count
-            # I/Bits  32...63 - System Uptime
-            # I/Bits  64...95 - UNIX seconds
-            # I/Bits  96..127 - Sequence Number
-            # I/Bits 128..159 - Source ID
-            # H/Bits 160..175 - Element ID
-            # H/Bits 176..191 - Field Length
-            nfdec_size = 22
-            if (nfd["msg_size"] - nfdec_pos) >= nfdec_size:
-                nfd["count"], nfd["sys_uptime"], nfd["unix_sec"], nfd["sequence_number"], nfd["source_id"], nfd["field_info_element_id"], nfd["field_length"] = struct.unpack(">HIIIIHH", data[nfdec_pos:nfdec_pos + nfdec_size])
-                nfdec_pos += nfdec_size
-
-            else:
-                if config["debug"]:
-                    sys.stdout.write("NFP/%s/v%s/%s/Not enough data left.\n" % (nfd["msg_src_ip"], nfd["version"], nfd["msg_type"]))
-                    sys.stdout.flush()
-                return
-
-        elif nfd["version"] == 5:
-            # H/Bits  16...31 - Count
-            # I/Bits  32...63 - System Uptime
-            # I/Bits  64...95 - UNIX seconds
-            # I/Bits  96..127 - UNIX nano seconds
-            # I/Bits 128..159 - Sequence Number
-            # B/Bits 160..167 - Engine Type
-            # B/Bits 168..175 - Engine ID
-            # H/Bits 176..191 - Sampling Interval
-            nfdec_size = 22
-            if (nfd["msg_size"] - nfdec_pos) >= nfdec_size:
-                nfd["count"], nfd["sys_uptime"], nfd["unix_sec"], nfd["unix_nsec"], nfd["sequence_number"], nfd["engine_type"], nfd["engine_id"], nfd["sampling_interval"] = struct.unpack(">HIIIIBBH", data[nfdec_pos:nfdec_pos + nfdec_size])
-                nfdec_pos += nfdec_size
-
-            else:
-                if config["debug"]:
-                    sys.stdout.write("NFP/%s/v%s/%s/Not enough data left.\n" % (nfd["msg_src_ip"], nfd["version"], nfd["msg_type"]))
-                    sys.stdout.flush()
-                return
-
-        elif nfd["version"] == 1:
-            # H/Bits  16...31 - Count
-            # I/Bits  32...63 - System Uptime
-            # I/Bits  64...95 - UNIX seconds
-            # I/Bits  96..127 - UNIX nano seconds
-            nfdec_size = 14
-            if (nfd["msg_size"] - nfdec_pos) >= nfdec_size:
-                nfd["count"], nfd["sys_uptime"], nfd["unix_sec"], nfd["unix_nsec"] = struct.unpack(">HIII", data[nfdec_pos:nfdec_pos + nfdec_size])
-                nfdec_pos += nfdec_size
-
-            else:
-                if config["debug"]:
-                    sys.stdout.write("NFP/%s/v%s/%s/Not enough data left.\n" % (nfd["msg_src_ip"], nfd["version"], nfd["msg_type"]))
-                    sys.stdout.flush()
-                return
-
         else:
             if config["debug"]:
                 sys.stdout.write("NFP/%s/v%s/%s/Unsupported version.\n" % (nfd["msg_src_ip"], nfd["version"], nfd["msg_type"]))
@@ -462,41 +541,20 @@ def NetFlow_Processor(adns_resolver, nf_src_ip, data):
             return
 
         # NetFlow v10 (IPFIX) & v9 - Templates
-        if (nfd["version"] == 10 and nfd["field_info_element_id"] == NetflowMessageID.Template) or (nfd["version"] == 9 and nfd["field_info_element_id"] == NetflowMessageID.TemplateV9):
-            nfd["msg_type"] = "template"
-            if nfd["version"] == 10:
-                nf_template_size = 16 + nfd["field_length"]
-            elif nfd["version"] == 9:
-                nf_template_size = 20 + nfd["field_length"]
+        if (nfd["version"] == 9 or nfd["version"] == 10):
+            if (nfd["field_info_element_id"] == NetflowMessageID.Template or nfd["field_info_element_id"] == NetflowMessageID.TemplateV9):
 
-            # while nfdec_pos != nfd["msg_size"]:
-            while nfdec_pos != nf_template_size:
-                nfdec_size = 4
-                if (nfd["msg_size"] - nfdec_pos) >= nfdec_size:
-                    nfd["template_id"], nfd["template_field_count"] = struct.unpack(">HH", data[nfdec_pos:nfdec_pos + nfdec_size])
-                    nfdec_pos += nfdec_size
+                nfd["msg_type"] = "template"
+                if nfd["version"] == 9:
+                    nf_template_size = 20 + nfd["field_length"]
+                elif nfd["version"] == 10:
+                    nf_template_size = 16 + nfd["field_length"]
 
-                else:
-                    if config["debug"]:
-                        sys.stdout.write("NFP/%s/v%s/%s/Not enough data left.\n" % (nfd["msg_src_ip"], nfd["version"], nfd["msg_type"]))
-                        sys.stdout.flush()
-                    return
-
-                nfdec_size = nfd["template_field_count"] * 4
-                if (nfd["msg_size"] - nfdec_pos) >= nfdec_size:
-                    nfd_template = struct.unpack(">" + "H" * (nfdec_size / 2), data[nfdec_pos:nfdec_pos + nfdec_size])
-                    nfdec_pos += nfdec_size
-
-                else:
-                    if config["debug"]:
-                        sys.stdout.write("NFP/%s/v%s/%s/Not enough data left.\n" % (nfd["msg_src_ip"], nfd["version"], nfd["msg_type"]))
-                        sys.stdout.flush()
-                    return
-
-                if (nfd["version"] == 10) and (nfd["field_info_element_id"] & NetflowMessageID.Enterprise == NetflowMessageID.Enterprise):
+                # while nfdec_pos != nfd["msg_size"]:
+                while nfdec_pos != nf_template_size:
                     nfdec_size = 4
                     if (nfd["msg_size"] - nfdec_pos) >= nfdec_size:
-                        nfd["field_enterprise_number"], = struct.unpack(">I", data[nfdec_pos:nfdec_pos + nfdec_size])
+                        nfd["template_id"], nfd["template_field_count"] = struct.unpack(">HH", data[nfdec_pos:nfdec_pos + nfdec_size])
                         nfdec_pos += nfdec_size
 
                     else:
@@ -505,357 +563,318 @@ def NetFlow_Processor(adns_resolver, nf_src_ip, data):
                             sys.stdout.flush()
                         return
 
-                i = 0
-                j = 0
-                nfd_template_unpack = ">"
-                nfd_template_struct = {}
-                nfd_template_size = 0
-                while i != nfd["template_field_count"]:
-                    if nfd_template[(2*i)+1] == 1:
-                        nfd_template_struct[nfd_template[(2*i)]] = (j, 1, 1)
-                        j += 1
-                        nfd_template_unpack = nfd_template_unpack + "B"
-                        nfd_template_size += 1
-
-                    elif nfd_template[(2*i)+1] == 2:
-                        nfd_template_struct[nfd_template[(2*i)]] = (j, 1, 2)
-                        j += 1
-                        nfd_template_unpack = nfd_template_unpack + "H"
-                        nfd_template_size += 2
-
-                    elif nfd_template[(2*i)+1] == 3:
-                        nfd_template_struct[nfd_template[(2*i)]] = (j, 3, 3)
-                        j += 3
-                        nfd_template_unpack = nfd_template_unpack + "BBB"
-                        nfd_template_size += 3
-
-                    elif nfd_template[(2*i)+1] == 4:
-                        nfd_template_struct[nfd_template[(2*i)]] = (j, 1, 4)
-                        j += 1
-                        nfd_template_unpack = nfd_template_unpack + "I"
-                        nfd_template_size += 4
-
-                    elif nfd_template[(2*i)+1] == 6:
-                        nfd_template_struct[nfd_template[(2*i)]] = (j, 3, 6)
-                        j += 3
-                        nfd_template_unpack = nfd_template_unpack + "HHH"
-                        nfd_template_size += 6
-
-                    elif nfd_template[(2*i)+1] == 8:
-                        nfd_template_struct[nfd_template[(2*i)]] = (j, 1, 8)
-                        j += 1
-                        nfd_template_unpack = nfd_template_unpack + "Q"
-                        nfd_template_size += 8
-
-                    elif nfd_template[(2*i)+1] == 16:
-                        nfd_template_struct[nfd_template[(2*i)]] = (j, 2, 16)
-                        j += 2
-                        nfd_template_unpack = nfd_template_unpack + "QQ"
-                        nfd_template_size += 16
+                    nfdec_size = nfd["template_field_count"] * 4
+                    if (nfd["msg_size"] - nfdec_pos) >= nfdec_size:
+                        nfd_template = struct.unpack(">" + "H" * (nfdec_size / 2), data[nfdec_pos:nfdec_pos + nfdec_size])
+                        nfdec_pos += nfdec_size
 
                     else:
                         if config["debug"]:
-                            sys.stdout.write("NFP/%s/v%s/%s/%s/Not valid field size: %s,%s,%s.\n" % (nfd["msg_src_ip"], nfd["version"], nfd["template_id"], nfd["msg_type"], i, nfd_template[(2*i)], nfd_template[(2*i)+1]))
-                            sys.stdout.flush()
-                        return
-                    i += 1
-
-                with lock:
-                    if "template" in netflow_sources[nfd["msg_src_ip"]].keys():
-                        netflow_sources[nfd["msg_src_ip"]]["template"][nfd["template_id"]] = (nfd["version"], nfd_template_size, nfd_template, nfd_template_unpack, nfd_template_struct)
-
-                    else:
-                        netflow_sources[nfd["msg_src_ip"]]["template"] = {}
-                        netflow_sources[nfd["msg_src_ip"]]["template"][nfd["template_id"]] = (nfd["version"], nfd_template_size, nfd_template, nfd_template_unpack, nfd_template_struct)
-
-                if config["debug"]:
-                    sys.stdout.write("NFP/%s/v%s/%s/%s/Processed.\n" % (nfd["msg_src_ip"], nfd["version"], nfd["template_id"], nfd["msg_type"]))
-
-        elif nfd["version"] == 10 and nfd["field_info_element_id"] == NetflowMessageID.Template_Optional:
-            nfd["msg_type"] = "optional"
-            # Not yet implemented.
-            if config["debug"]:
-                sys.stdout.write("NFP/%s/v%s/%s/%s/Not yet supported.\n" % (nfd["msg_src_ip"], nfd["version"], nfd["field_info_element_id"], nfd["msg_type"]))
-                sys.stdout.flush()
-            return
-
-        elif nfd["version"] == 9 and nfd["field_info_element_id"] == NetflowMessageID.TemplateV9_Optional:
-            nfd["msg_type"] = "optional"
-            # Not yet implemented.
-            if config["debug"]:
-                sys.stdout.write("NFP/%s/v%s/%s/%s/Not yet supported.\n" % (nfd["msg_src_ip"], nfd["version"], nfd["field_info_element_id"], nfd["msg_type"]))
-                sys.stdout.flush()
-            return
-
-        elif (nfd["version"] == 10 or nfd["version"] == 9) and nfd["field_info_element_id"] >= NetflowMessageID.FlowRecord:
-            nfd["msg_type"] = "data"
-            if "template" in netflow_sources[nfd["msg_src_ip"]].keys():
-                if nfd["field_info_element_id"] in netflow_sources[nfd["msg_src_ip"]]["template"].keys():
-                    if nfd["version"] == netflow_sources[nfd["msg_src_ip"]]["template"][nfd["field_info_element_id"]][NetFlowTemplates.Version]:
-
-                        # Calculate padding.
-                        nf_data_padding = ((nfd["msg_size"] - nfdec_pos) % (netflow_sources[nfd["msg_src_ip"]]["template"][nfd["field_info_element_id"]][NetFlowTemplates.Size])) % 4
-
-                        while nfdec_pos != nfd["msg_size"] - nf_data_padding:
-                            nfdec_size = netflow_sources[nfd["msg_src_ip"]]["template"][nfd["field_info_element_id"]][NetFlowTemplates.Size]
-                            if (nfd["msg_size"] - nfdec_pos) >= nfdec_size:
-                                nf_data = struct.unpack(netflow_sources[nfd["msg_src_ip"]]["template"][nfd["field_info_element_id"]][NetFlowTemplates.Unpack], data[nfdec_pos:nfdec_pos + nfdec_size])
-                                nfdec_pos += nfdec_size
-
-                            else:
-                                if config["debug"]:
-                                    sys.stdout.write("NFP/%s/v%s/%s/Not enough data left.\n" % (nfd["msg_src_ip"], nfd["version"], nfd["msg_type"]))
-                                    sys.stdout.flush()
-                                return
-
-                    else:
-                        if config["debug"]:
-                            sys.stdout.write("NFP/%s/v%s/%s/%s/Version does not match with the known template.\n" % (nfd["msg_src_ip"], nfd["version"], nfd["field_info_element_id"], nfd["msg_type"]))
+                            sys.stdout.write("NFP/%s/v%s/%s/Not enough data left.\n" % (nfd["msg_src_ip"], nfd["version"], nfd["msg_type"]))
                             sys.stdout.flush()
                         return
 
-                else:
+                    if (nfd["version"] == 10) and (nfd["field_info_element_id"] & NetflowMessageID.Enterprise == NetflowMessageID.Enterprise):
+                        nfdec_size = 4
+                        if (nfd["msg_size"] - nfdec_pos) >= nfdec_size:
+                            nfd["field_enterprise_number"], = struct.unpack(">I", data[nfdec_pos:nfdec_pos + nfdec_size])
+                            nfdec_pos += nfdec_size
+
+                        else:
+                            if config["debug"]:
+                                sys.stdout.write("NFP/%s/v%s/%s/Not enough data left.\n" % (nfd["msg_src_ip"], nfd["version"], nfd["msg_type"]))
+                                sys.stdout.flush()
+                            return
+
+                    i = 0
+                    j = 0
+                    nfd_template_unpack = ">"
+                    nfd_template_struct = {}
+                    nfd_template_size = 0
+                    while i != nfd["template_field_count"]:
+                        if nfd_template[(2*i)+1] == 1:
+                            nfd_template_struct[nfd_template[(2*i)]] = (j, 1, 1)
+                            j += 1
+                            nfd_template_unpack = nfd_template_unpack + "B"
+                            nfd_template_size += 1
+
+                        elif nfd_template[(2*i)+1] == 2:
+                            nfd_template_struct[nfd_template[(2*i)]] = (j, 1, 2)
+                            j += 1
+                            nfd_template_unpack = nfd_template_unpack + "H"
+                            nfd_template_size += 2
+
+                        elif nfd_template[(2*i)+1] == 3:
+                            nfd_template_struct[nfd_template[(2*i)]] = (j, 3, 3)
+                            j += 3
+                            nfd_template_unpack = nfd_template_unpack + "BBB"
+                            nfd_template_size += 3
+
+                        elif nfd_template[(2*i)+1] == 4:
+                            nfd_template_struct[nfd_template[(2*i)]] = (j, 1, 4)
+                            j += 1
+                            nfd_template_unpack = nfd_template_unpack + "I"
+                            nfd_template_size += 4
+
+                        elif nfd_template[(2*i)+1] == 6:
+                            nfd_template_struct[nfd_template[(2*i)]] = (j, 3, 6)
+                            j += 3
+                            nfd_template_unpack = nfd_template_unpack + "HHH"
+                            nfd_template_size += 6
+
+                        elif nfd_template[(2*i)+1] == 8:
+                            nfd_template_struct[nfd_template[(2*i)]] = (j, 1, 8)
+                            j += 1
+                            nfd_template_unpack = nfd_template_unpack + "Q"
+                            nfd_template_size += 8
+
+                        elif nfd_template[(2*i)+1] == 16:
+                            nfd_template_struct[nfd_template[(2*i)]] = (j, 2, 16)
+                            j += 2
+                            nfd_template_unpack = nfd_template_unpack + "QQ"
+                            nfd_template_size += 16
+
+                        else:
+                            if config["debug"]:
+                                sys.stdout.write("NFP/%s/v%s/%s/%s/Not valid field size: %s,%s,%s.\n" % (nfd["msg_src_ip"], nfd["version"], nfd["template_id"], nfd["msg_type"], i, nfd_template[(2*i)], nfd_template[(2*i)+1]))
+                                sys.stdout.flush()
+                            return
+                        i += 1
+
+                    with lock:
+                        if "template" in netflow_sources[nfd["msg_src_ip"]].keys():
+                            netflow_sources[nfd["msg_src_ip"]]["template"][nfd["template_id"]] = (nfd["version"], nfd_template_size, nfd_template, nfd_template_unpack, nfd_template_struct)
+
+                        else:
+                            netflow_sources[nfd["msg_src_ip"]]["template"] = {}
+                            netflow_sources[nfd["msg_src_ip"]]["template"][nfd["template_id"]] = (nfd["version"], nfd_template_size, nfd_template, nfd_template_unpack, nfd_template_struct)
+
                     if config["debug"]:
-                        sys.stdout.write("NFP/%s/v%s/%s/%s/Unknown template ID.\n" % (nfd["msg_src_ip"], nfd["version"], nfd["field_info_element_id"], nfd["msg_type"]))
-                        sys.stdout.flush()
-                    return
+                        sys.stdout.write("NFP/%s/v%s/%s/%s/Processed.\n" % (nfd["msg_src_ip"], nfd["version"], nfd["template_id"], nfd["msg_type"]))
 
-            else:
-                # if config["debug"]:
-                #    sys.stdout.write("NFP/%s/v%s/%s/%s/No templates received from the source.\n" % (nfd["msg_src_ip"], nfd["version"], nfd["field_info_element_id"], nfd["msg_type"]))
-                #    sys.stdout.flush()
+            elif nfd["field_info_element_id"] == NetflowMessageID.Template_Optional:
+                nfd["msg_type"] = "optional"
+                # Not yet implemented.
+                if config["debug"]:
+                    sys.stdout.write("NFP/%s/v%s/%s/%s/Not yet supported.\n" % (nfd["msg_src_ip"], nfd["version"], nfd["field_info_element_id"], nfd["msg_type"]))
+                    sys.stdout.flush()
                 return
 
-            if NetFlowDataTypes.IPv4_Src_Addr in netflow_sources[nfd["msg_src_ip"]]["template"][nfd["field_info_element_id"]][NetFlowTemplates.Struct]:
-                nf_data_loc = netflow_sources[nfd["msg_src_ip"]]["template"][nfd["field_info_element_id"]][NetFlowTemplates.Struct][NetFlowDataTypes.IPv4_Src_Addr][0]
-                nfd["src_ip4"] = socket.inet_ntop(socket.AF_INET, struct.pack("!L", nf_data[nf_data_loc]))
-            else:
-                nfd["src_ip4"] = None
-
-            if NetFlowDataTypes.IPv4_Dst_Addr in netflow_sources[nfd["msg_src_ip"]]["template"][nfd["field_info_element_id"]][NetFlowTemplates.Struct]:
-                nf_data_loc = netflow_sources[nfd["msg_src_ip"]]["template"][nfd["field_info_element_id"]][NetFlowTemplates.Struct][NetFlowDataTypes.IPv4_Dst_Addr][0]
-                nfd["dst_ip4"] = socket.inet_ntop(socket.AF_INET, struct.pack("!L", nf_data[nf_data_loc]))
-            else:
-                nfd["dst_ip4"] = None
-
-            if NetFlowDataTypes.IPv4_Next_Hop in netflow_sources[nfd["msg_src_ip"]]["template"][nfd["field_info_element_id"]][NetFlowTemplates.Struct]:
-                nf_data_loc = netflow_sources[nfd["msg_src_ip"]]["template"][nfd["field_info_element_id"]][NetFlowTemplates.Struct][NetFlowDataTypes.IPv4_Next_Hop][0]
-                nfd["nexthop_ip4"] = socket.inet_ntop(socket.AF_INET, struct.pack("!L", nf_data[nf_data_loc]))
-            else:
-                nfd["nexthop_ip4"] = None
-
-            if NetFlowDataTypes.IPv6_Src_Addr in netflow_sources[nfd["msg_src_ip"]]["template"][nfd["field_info_element_id"]][NetFlowTemplates.Struct]:
-                nf_data_loc = netflow_sources[nfd["msg_src_ip"]]["template"][nfd["field_info_element_id"]][NetFlowTemplates.Struct][NetFlowDataTypes.IPv6_Src_Addr][0]
-                nfd["src_ip6"] = socket.inet_ntop(socket.AF_INET6, struct.pack("!2Q", nf_data[nf_data_loc], nf_data[nf_data_loc + 1]))
-            else:
-                nfd["src_ip6"] = None
-
-            if NetFlowDataTypes.IPv6_Dst_Addr in netflow_sources[nfd["msg_src_ip"]]["template"][nfd["field_info_element_id"]][NetFlowTemplates.Struct]:
-                nf_data_loc = netflow_sources[nfd["msg_src_ip"]]["template"][nfd["field_info_element_id"]][NetFlowTemplates.Struct][NetFlowDataTypes.IPv6_Dst_Addr][0]
-                nfd["dst_ip6"] = socket.inet_ntop(socket.AF_INET6, struct.pack("!2Q", nf_data[nf_data_loc], nf_data[nf_data_loc + 1]))
-            else:
-                nfd["dst_ip6"] = None
-
-            if NetFlowDataTypes.IPv6_Next_Hop in netflow_sources[nfd["msg_src_ip"]]["template"][nfd["field_info_element_id"]][NetFlowTemplates.Struct]:
-                nf_data_loc = netflow_sources[nfd["msg_src_ip"]]["template"][nfd["field_info_element_id"]][NetFlowTemplates.Struct][NetFlowDataTypes.IPv6_Next_Hop][0]
-                nfd["nexthop_ip6"] = socket.inet_ntop(socket.AF_INET6, struct.pack("!2Q", nf_data[nf_data_loc], nf_data[nf_data_loc + 1]))
-            else:
-                nfd["nexthop_ip6"] = None
-
-            if NetFlowDataTypes.Src_AS in netflow_sources[nfd["msg_src_ip"]]["template"][nfd["field_info_element_id"]][NetFlowTemplates.Struct]:
-                nf_data_loc = netflow_sources[nfd["msg_src_ip"]]["template"][nfd["field_info_element_id"]][NetFlowTemplates.Struct][NetFlowDataTypes.Src_AS][0]
-                nfd["src_as"] = nf_data[nf_data_loc]
-            else:
-                nfd["src_as"] = None
-
-            if NetFlowDataTypes.Dst_AS in netflow_sources[nfd["msg_src_ip"]]["template"][nfd["field_info_element_id"]][NetFlowTemplates.Struct]:
-                nf_data_loc = netflow_sources[nfd["msg_src_ip"]]["template"][nfd["field_info_element_id"]][NetFlowTemplates.Struct][NetFlowDataTypes.Dst_AS][0]
-                nfd["dst_as"] = nf_data[nf_data_loc]
-            else:
-                nfd["dst_as"] = None
-
-            if NetFlowDataTypes.Input_SNMP in netflow_sources[nfd["msg_src_ip"]]["template"][nfd["field_info_element_id"]][NetFlowTemplates.Struct]:
-                nf_data_loc = netflow_sources[nfd["msg_src_ip"]]["template"][nfd["field_info_element_id"]][NetFlowTemplates.Struct][NetFlowDataTypes.Input_SNMP][0]
-                nfd["in_interface"] = nf_data[nf_data_loc]
-            else:
-                nfd["in_interface"] = 0
-
-            if NetFlowDataTypes.Output_SNMP in netflow_sources[nfd["msg_src_ip"]]["template"][nfd["field_info_element_id"]][NetFlowTemplates.Struct]:
-                nf_data_loc = netflow_sources[nfd["msg_src_ip"]]["template"][nfd["field_info_element_id"]][NetFlowTemplates.Struct][NetFlowDataTypes.Output_SNMP][0]
-                nfd["out_interface"] = nf_data[nf_data_loc]
-            else:
-                nfd["out_interface"] = 0
-
-            if NetFlowDataTypes.In_Bytes in netflow_sources[nfd["msg_src_ip"]]["template"][nfd["field_info_element_id"]][NetFlowTemplates.Struct]:
-                nf_data_loc = netflow_sources[nfd["msg_src_ip"]]["template"][nfd["field_info_element_id"]][NetFlowTemplates.Struct][NetFlowDataTypes.In_Bytes][0]
-                nfd["in_bytes"] = nf_data[nf_data_loc]
-            else:
-                nfd["in_bytes"] = 0
-
-            if NetFlowDataTypes.Out_Bytes in netflow_sources[nfd["msg_src_ip"]]["template"][nfd["field_info_element_id"]][NetFlowTemplates.Struct]:
-                nf_data_loc = netflow_sources[nfd["msg_src_ip"]]["template"][nfd["field_info_element_id"]][NetFlowTemplates.Struct][NetFlowDataTypes.Out_Bytes][0]
-                nfd["out_bytes"] = nf_data[nf_data_loc]
-            else:
-                nfd["out_bytes"] = 0
-
-            if NetFlowDataTypes.In_Packets in netflow_sources[nfd["msg_src_ip"]]["template"][nfd["field_info_element_id"]][NetFlowTemplates.Struct]:
-                nf_data_loc = netflow_sources[nfd["msg_src_ip"]]["template"][nfd["field_info_element_id"]][NetFlowTemplates.Struct][NetFlowDataTypes.In_Packets][0]
-                nfd["in_packets"] = nf_data[nf_data_loc]
-            else:
-                nfd["in_packets"] = 0
-
-            if NetFlowDataTypes.Out_Packets in netflow_sources[nfd["msg_src_ip"]]["template"][nfd["field_info_element_id"]][NetFlowTemplates.Struct]:
-                nf_data_loc = netflow_sources[nfd["msg_src_ip"]]["template"][nfd["field_info_element_id"]][NetFlowTemplates.Struct][NetFlowDataTypes.Out_Packets][0]
-                nfd["out_packets"] = nf_data[nf_data_loc]
-            else:
-                nfd["out_packets"] = 0
-
-            if NetFlowDataTypes.First_Switched in netflow_sources[nfd["msg_src_ip"]]["template"][nfd["field_info_element_id"]][NetFlowTemplates.Struct]:
-                nf_data_loc = netflow_sources[nfd["msg_src_ip"]]["template"][nfd["field_info_element_id"]][NetFlowTemplates.Struct][NetFlowDataTypes.First_Switched][0]
-                nfd["flow_first"] = nf_data[nf_data_loc]
-            else:
-                nfd["flow_first"] = 0
-
-            if NetFlowDataTypes.Last_Switched in netflow_sources[nfd["msg_src_ip"]]["template"][nfd["field_info_element_id"]][NetFlowTemplates.Struct]:
-                nf_data_loc = netflow_sources[nfd["msg_src_ip"]]["template"][nfd["field_info_element_id"]][NetFlowTemplates.Struct][NetFlowDataTypes.Last_Switched][0]
-                nfd["flow_last"] = nf_data[nf_data_loc]
-            else:
-                nfd["flow_last"] = 0
-
-            if NetFlowDataTypes.L4_Src_Port in netflow_sources[nfd["msg_src_ip"]]["template"][nfd["field_info_element_id"]][NetFlowTemplates.Struct]:
-                nf_data_loc = netflow_sources[nfd["msg_src_ip"]]["template"][nfd["field_info_element_id"]][NetFlowTemplates.Struct][NetFlowDataTypes.L4_Src_Port][0]
-                nfd["src_port"] = nf_data[nf_data_loc]
-            else:
-                nfd["src_port"] = None
-
-            if NetFlowDataTypes.L4_Dst_Port in netflow_sources[nfd["msg_src_ip"]]["template"][nfd["field_info_element_id"]][NetFlowTemplates.Struct]:
-                nf_data_loc = netflow_sources[nfd["msg_src_ip"]]["template"][nfd["field_info_element_id"]][NetFlowTemplates.Struct][NetFlowDataTypes.L4_Dst_Port][0]
-                nfd["dst_port"] = nf_data[nf_data_loc]
-            else:
-                nfd["dst_port"] = None
-
-            if NetFlowDataTypes.TCP_Flags in netflow_sources[nfd["msg_src_ip"]]["template"][nfd["field_info_element_id"]][NetFlowTemplates.Struct]:
-                nf_data_loc = netflow_sources[nfd["msg_src_ip"]]["template"][nfd["field_info_element_id"]][NetFlowTemplates.Struct][NetFlowDataTypes.TCP_Flags][0]
-                nfd["tcp_flags"] = nf_data[nf_data_loc]
-            else:
-                nfd["tcp_flags"] = None
-
-            if NetFlowDataTypes.Protocol in netflow_sources[nfd["msg_src_ip"]]["template"][nfd["field_info_element_id"]][NetFlowTemplates.Struct]:
-                nf_data_loc = netflow_sources[nfd["msg_src_ip"]]["template"][nfd["field_info_element_id"]][NetFlowTemplates.Struct][NetFlowDataTypes.Protocol][0]
-                nfd["proto"] = nf_data[nf_data_loc]
-            else:
-                nfd["proto"] = None
-
-            if NetFlowDataTypes.Src_TOS in netflow_sources[nfd["msg_src_ip"]]["template"][nfd["field_info_element_id"]][NetFlowTemplates.Struct]:
-                nf_data_loc = netflow_sources[nfd["msg_src_ip"]]["template"][nfd["field_info_element_id"]][NetFlowTemplates.Struct][NetFlowDataTypes.Src_TOS][0]
-                nfd["src_tos"] = nf_data[nf_data_loc]
-            else:
-                nfd["src_tos"] = None
-
-            if NetFlowDataTypes.Dst_TOS in netflow_sources[nfd["msg_src_ip"]]["template"][nfd["field_info_element_id"]][NetFlowTemplates.Struct]:
-                nf_data_loc = netflow_sources[nfd["msg_src_ip"]]["template"][nfd["field_info_element_id"]][NetFlowTemplates.Struct][NetFlowDataTypes.Dst_TOS][0]
-                nfd["dst_tos"] = nf_data[nf_data_loc]
-            else:
-                nfd["dst_tos"] = None
-
-            if NetFlowDataTypes.Src_Mask in netflow_sources[nfd["msg_src_ip"]]["template"][nfd["field_info_element_id"]][NetFlowTemplates.Struct]:
-                nf_data_loc = netflow_sources[nfd["msg_src_ip"]]["template"][nfd["field_info_element_id"]][NetFlowTemplates.Struct][NetFlowDataTypes.Src_Mask][0]
-                nfd["src_mask4"] = nf_data[nf_data_loc]
-            else:
-                nfd["src_mask4"] = None
-
-            if NetFlowDataTypes.Dst_Mask in netflow_sources[nfd["msg_src_ip"]]["template"][nfd["field_info_element_id"]][NetFlowTemplates.Struct]:
-                nf_data_loc = netflow_sources[nfd["msg_src_ip"]]["template"][nfd["field_info_element_id"]][NetFlowTemplates.Struct][NetFlowDataTypes.Dst_Mask][0]
-                nfd["dst_mask4"] = nf_data[nf_data_loc]
-            else:
-                nfd["dst_mask4"] = None
-
-            if NetFlowDataTypes.IPv6_Src_Mask in netflow_sources[nfd["msg_src_ip"]]["template"][nfd["field_info_element_id"]][NetFlowTemplates.Struct]:
-                nf_data_loc = netflow_sources[nfd["msg_src_ip"]]["template"][nfd["field_info_element_id"]][NetFlowTemplates.Struct][NetFlowDataTypes.IPv6_Src_Mask][0]
-                nfd["src_mask6"] = nf_data[nf_data_loc]
-            else:
-                nfd["src_mask6"] = None
-
-            if NetFlowDataTypes.IPv6_Dst_Mask in netflow_sources[nfd["msg_src_ip"]]["template"][nfd["field_info_element_id"]][NetFlowTemplates.Struct]:
-                nf_data_loc = netflow_sources[nfd["msg_src_ip"]]["template"][nfd["field_info_element_id"]][NetFlowTemplates.Struct][NetFlowDataTypes.IPv6_Dst_Mask][0]
-                nfd["dst_mask6"] = nf_data[nf_data_loc]
-            else:
-                nfd["dst_mask6"] = None
-
-        # NetFlow v5 - Data
-        elif (nfd["version"] == 5):
-            i = 0
-            while i != nfd["count"]:
-                nfdec_size = 48
-                if (nfd["msg_size"] - nfdec_pos) >= nfdec_size:
-                    nfd["src_ip4"], nfd["dst_ip4"], nfd["nexthop_ip4"],
-                    nfd["in_interface"], nfd["out_interface"],
-                    nfd["in_packets"], nfd["in_bytes"],
-                    nfd["flow_first"], nfd["flow_last"],
-                    nfd["src_port"], nfd["dst_port"],
-                    nf_pad1, nfd["tcp_flags"], nfd["proto"], nfd["src_tos"],
-                    nfd["src_as"], nfd["dst_as"], nfd["src_mask4"], nfd["dst_mask4"],
-                    nf_pad2 = struct.unpack(">IIIHHIIIIHHBBBBHHBBH", data[nfdec_pos:nfdec_pos + nfdec_size])
-                    nfdec_pos += nfdec_size
-                    i += 1
-
-                else:
-                    if config["debug"]:
-                        sys.stdout.write("NFP/%s/v%s/%s/Not enough data left.\n" % (nfd["msg_src_ip"], nfd["version"], nfd["msg_type"]))
-                        sys.stdout.flush()
-                    return
-
-        # NetFlow v1 - Data
-        elif (nfd["version"] == 1):
-            i = 0
-            while i != nfd["count"]:
-                nfdec_size = 48
-                if (nfd["msg_size"] - nfdec_pos) >= nfdec_size:
-                    nfd["src_ip4"], nfd["dst_ip4"], nfd["nexthop_ip4"],
-                    nfd["in_interface"], nfd["out_interface"],
-                    nfd["in_packets"], nfd["in_bytes"],
-                    nfd["flow_first"], nfd["flow_last"],
-                    nfd["src_port"], nfd["dst_port"],
-                    nf_pad1, nfd["proto"], nfd["src_tos"], nfd["tcp_flags"],
-                    nf_pad2, nf_pad3, nf_pad4,
-                    nf_reserved = struct.unpack(">IIIHHIIIIHHHBBBBBBI", data[nfdec_pos:nfdec_pos + nfdec_size])
-                    nfdec_pos += nfdec_size
-
-                else:
-                    if config["debug"]:
-                        sys.stdout.write("NFP/%s/v%s/%s/Not enough data left.\n" % (nfd["msg_src_ip"], nfd["version"], nfd["msg_type"]))
-                        sys.stdout.flush()
-                    return
-
-        else:
-            if config["debug"]:
-                sys.stdout.write("NFP/%s/v%s/%s/%s/Unknown message type.\n" % (nfd["msg_src_ip"], nfd["version"], nfd["field_info_element_id"], nfd["msg_type"]))
-                sys.stdout.flush()
-            return
-
-        if config["ip2asn"]:
-            if nfd["src_ip4"] is not None and nfd["dst_ip4"] is not None:
-                if nfd["src_as"] is None or nfd["src_as"] == ASNtype.Unknown or (nfd["src_as"] >= 64512 and nfd["src_as"] <= 65534) or (nfd["src_as"] >= 4200000000 and nfd["src_as"] <= 4294967294):
-                    nfd["src_as"] = IP2ASNresolver(adns_resolver, nfd["src_ip4"])
-
-                if nfd["dst_as"] is None or nfd["dst_as"] == ASNtype.Unknown or (nfd["dst_as"] >= 64512 and nfd["dst_as"] <= 65534) or (nfd["dst_as"] >= 4200000000 and nfd["dst_as"] <= 4294967294):
-                    nfd["dst_as"] = IP2ASNresolver(adns_resolver, nfd["dst_ip4"])
-
-            elif nfd["src_ip6"] is not None and nfd["dst_ip6"] is not None:
-                # IP2ASN DNS lookup not supported for IPv6
+            elif nfd["field_info_element_id"] == NetflowMessageID.TemplateV9_Optional:
+                nfd["msg_type"] = "optional"
+                # Not yet implemented.
                 if config["debug"]:
-                    sys.stdout.write("NFP/%s/v%s/%s/%s/IP2ASN DNS lookup not supported for IPv6 addresses.\n" % (nfd["msg_src_ip"], nfd["version"], nfd["field_info_element_id"], nfd["msg_type"]))
+                    sys.stdout.write("NFP/%s/v%s/%s/%s/Not yet supported.\n" % (nfd["msg_src_ip"], nfd["version"], nfd["field_info_element_id"], nfd["msg_type"]))
                     sys.stdout.flush()
+                return
 
-        # !!! TO BE REMOVED !!!
-        if config["debug"]:
-            print(nfd)
+            elif nfd["field_info_element_id"] >= NetflowMessageID.FlowRecord:
+                nfd["msg_type"] = "data"
+                if "template" in netflow_sources[nfd["msg_src_ip"]].keys():
+                    if nfd["field_info_element_id"] in netflow_sources[nfd["msg_src_ip"]]["template"].keys():
+                        if nfd["version"] == netflow_sources[nfd["msg_src_ip"]]["template"][nfd["field_info_element_id"]][NetFlowTemplates.Version]:
 
-        with lock:
-            if "." in nfd["msg_src_ip"]:
-                netflow_sources[nfd["msg_src_ip"]]["v4_packets_processed"] += 1
+                            # Calculate padding.
+                            nf_data_padding = ((nfd["msg_size"] - nfdec_pos) % (netflow_sources[nfd["msg_src_ip"]]["template"][nfd["field_info_element_id"]][NetFlowTemplates.Size])) % 4
+
+                            while nfdec_pos != nfd["msg_size"] - nf_data_padding:
+                                nfdec_size = netflow_sources[nfd["msg_src_ip"]]["template"][nfd["field_info_element_id"]][NetFlowTemplates.Size]
+                                if (nfd["msg_size"] - nfdec_pos) >= nfdec_size:
+                                    nf_data = struct.unpack(netflow_sources[nfd["msg_src_ip"]]["template"][nfd["field_info_element_id"]][NetFlowTemplates.Unpack], data[nfdec_pos:nfdec_pos + nfdec_size])
+                                    nfdec_pos += nfdec_size
+                                else:
+                                    if config["debug"]:
+                                        sys.stdout.write("NFP/%s/v%s/%s/Not enough data left.\n" % (nfd["msg_src_ip"], nfd["version"], nfd["msg_type"]))
+                                        sys.stdout.flush()
+                                    return
+
+                                if NetFlowDataTypes.IPv4_Src_Addr in netflow_sources[nfd["msg_src_ip"]]["template"][nfd["field_info_element_id"]][NetFlowTemplates.Struct]:
+                                    nf_data_loc = netflow_sources[nfd["msg_src_ip"]]["template"][nfd["field_info_element_id"]][NetFlowTemplates.Struct][NetFlowDataTypes.IPv4_Src_Addr][0]
+                                    nfd["src_ip4"] = socket.inet_ntop(socket.AF_INET, struct.pack("!L", nf_data[nf_data_loc]))
+                                else:
+                                    nfd["src_ip4"] = None
+
+                                if NetFlowDataTypes.IPv4_Dst_Addr in netflow_sources[nfd["msg_src_ip"]]["template"][nfd["field_info_element_id"]][NetFlowTemplates.Struct]:
+                                    nf_data_loc = netflow_sources[nfd["msg_src_ip"]]["template"][nfd["field_info_element_id"]][NetFlowTemplates.Struct][NetFlowDataTypes.IPv4_Dst_Addr][0]
+                                    nfd["dst_ip4"] = socket.inet_ntop(socket.AF_INET, struct.pack("!L", nf_data[nf_data_loc]))
+                                else:
+                                    nfd["dst_ip4"] = None
+
+                                if NetFlowDataTypes.IPv4_Next_Hop in netflow_sources[nfd["msg_src_ip"]]["template"][nfd["field_info_element_id"]][NetFlowTemplates.Struct]:
+                                    nf_data_loc = netflow_sources[nfd["msg_src_ip"]]["template"][nfd["field_info_element_id"]][NetFlowTemplates.Struct][NetFlowDataTypes.IPv4_Next_Hop][0]
+                                    nfd["nexthop_ip4"] = socket.inet_ntop(socket.AF_INET, struct.pack("!L", nf_data[nf_data_loc]))
+                                else:
+                                    nfd["nexthop_ip4"] = None
+
+                                if NetFlowDataTypes.IPv6_Src_Addr in netflow_sources[nfd["msg_src_ip"]]["template"][nfd["field_info_element_id"]][NetFlowTemplates.Struct]:
+                                    nf_data_loc = netflow_sources[nfd["msg_src_ip"]]["template"][nfd["field_info_element_id"]][NetFlowTemplates.Struct][NetFlowDataTypes.IPv6_Src_Addr][0]
+                                    nfd["src_ip6"] = socket.inet_ntop(socket.AF_INET6, struct.pack("!2Q", nf_data[nf_data_loc], nf_data[nf_data_loc + 1]))
+                                else:
+                                    nfd["src_ip6"] = None
+
+                                if NetFlowDataTypes.IPv6_Dst_Addr in netflow_sources[nfd["msg_src_ip"]]["template"][nfd["field_info_element_id"]][NetFlowTemplates.Struct]:
+                                    nf_data_loc = netflow_sources[nfd["msg_src_ip"]]["template"][nfd["field_info_element_id"]][NetFlowTemplates.Struct][NetFlowDataTypes.IPv6_Dst_Addr][0]
+                                    nfd["dst_ip6"] = socket.inet_ntop(socket.AF_INET6, struct.pack("!2Q", nf_data[nf_data_loc], nf_data[nf_data_loc + 1]))
+                                else:
+                                    nfd["dst_ip6"] = None
+
+                                if NetFlowDataTypes.IPv6_Next_Hop in netflow_sources[nfd["msg_src_ip"]]["template"][nfd["field_info_element_id"]][NetFlowTemplates.Struct]:
+                                    nf_data_loc = netflow_sources[nfd["msg_src_ip"]]["template"][nfd["field_info_element_id"]][NetFlowTemplates.Struct][NetFlowDataTypes.IPv6_Next_Hop][0]
+                                    nfd["nexthop_ip6"] = socket.inet_ntop(socket.AF_INET6, struct.pack("!2Q", nf_data[nf_data_loc], nf_data[nf_data_loc + 1]))
+                                else:
+                                    nfd["nexthop_ip6"] = None
+
+                                if NetFlowDataTypes.Src_AS in netflow_sources[nfd["msg_src_ip"]]["template"][nfd["field_info_element_id"]][NetFlowTemplates.Struct]:
+                                    nf_data_loc = netflow_sources[nfd["msg_src_ip"]]["template"][nfd["field_info_element_id"]][NetFlowTemplates.Struct][NetFlowDataTypes.Src_AS][0]
+                                    nfd["src_as"] = nf_data[nf_data_loc]
+                                else:
+                                    nfd["src_as"] = None
+
+                                if NetFlowDataTypes.Dst_AS in netflow_sources[nfd["msg_src_ip"]]["template"][nfd["field_info_element_id"]][NetFlowTemplates.Struct]:
+                                    nf_data_loc = netflow_sources[nfd["msg_src_ip"]]["template"][nfd["field_info_element_id"]][NetFlowTemplates.Struct][NetFlowDataTypes.Dst_AS][0]
+                                    nfd["dst_as"] = nf_data[nf_data_loc]
+                                else:
+                                    nfd["dst_as"] = None
+
+                                if NetFlowDataTypes.Input_SNMP in netflow_sources[nfd["msg_src_ip"]]["template"][nfd["field_info_element_id"]][NetFlowTemplates.Struct]:
+                                    nf_data_loc = netflow_sources[nfd["msg_src_ip"]]["template"][nfd["field_info_element_id"]][NetFlowTemplates.Struct][NetFlowDataTypes.Input_SNMP][0]
+                                    nfd["in_interface"] = nf_data[nf_data_loc]
+                                else:
+                                    nfd["in_interface"] = 0
+
+                                if NetFlowDataTypes.Output_SNMP in netflow_sources[nfd["msg_src_ip"]]["template"][nfd["field_info_element_id"]][NetFlowTemplates.Struct]:
+                                    nf_data_loc = netflow_sources[nfd["msg_src_ip"]]["template"][nfd["field_info_element_id"]][NetFlowTemplates.Struct][NetFlowDataTypes.Output_SNMP][0]
+                                    nfd["out_interface"] = nf_data[nf_data_loc]
+                                else:
+                                    nfd["out_interface"] = 0
+
+                                if NetFlowDataTypes.In_Bytes in netflow_sources[nfd["msg_src_ip"]]["template"][nfd["field_info_element_id"]][NetFlowTemplates.Struct]:
+                                    nf_data_loc = netflow_sources[nfd["msg_src_ip"]]["template"][nfd["field_info_element_id"]][NetFlowTemplates.Struct][NetFlowDataTypes.In_Bytes][0]
+                                    nfd["in_bytes"] = nf_data[nf_data_loc]
+                                else:
+                                    nfd["in_bytes"] = 0
+
+                                if NetFlowDataTypes.Out_Bytes in netflow_sources[nfd["msg_src_ip"]]["template"][nfd["field_info_element_id"]][NetFlowTemplates.Struct]:
+                                    nf_data_loc = netflow_sources[nfd["msg_src_ip"]]["template"][nfd["field_info_element_id"]][NetFlowTemplates.Struct][NetFlowDataTypes.Out_Bytes][0]
+                                    nfd["out_bytes"] = nf_data[nf_data_loc]
+                                else:
+                                    nfd["out_bytes"] = 0
+
+                                if NetFlowDataTypes.In_Packets in netflow_sources[nfd["msg_src_ip"]]["template"][nfd["field_info_element_id"]][NetFlowTemplates.Struct]:
+                                    nf_data_loc = netflow_sources[nfd["msg_src_ip"]]["template"][nfd["field_info_element_id"]][NetFlowTemplates.Struct][NetFlowDataTypes.In_Packets][0]
+                                    nfd["in_packets"] = nf_data[nf_data_loc]
+                                else:
+                                    nfd["in_packets"] = 0
+
+                                if NetFlowDataTypes.Out_Packets in netflow_sources[nfd["msg_src_ip"]]["template"][nfd["field_info_element_id"]][NetFlowTemplates.Struct]:
+                                    nf_data_loc = netflow_sources[nfd["msg_src_ip"]]["template"][nfd["field_info_element_id"]][NetFlowTemplates.Struct][NetFlowDataTypes.Out_Packets][0]
+                                    nfd["out_packets"] = nf_data[nf_data_loc]
+                                else:
+                                    nfd["out_packets"] = 0
+
+                                if NetFlowDataTypes.First_Switched in netflow_sources[nfd["msg_src_ip"]]["template"][nfd["field_info_element_id"]][NetFlowTemplates.Struct]:
+                                    nf_data_loc = netflow_sources[nfd["msg_src_ip"]]["template"][nfd["field_info_element_id"]][NetFlowTemplates.Struct][NetFlowDataTypes.First_Switched][0]
+                                    nfd["flow_first"] = nf_data[nf_data_loc]
+                                else:
+                                    nfd["flow_first"] = 0
+
+                                if NetFlowDataTypes.Last_Switched in netflow_sources[nfd["msg_src_ip"]]["template"][nfd["field_info_element_id"]][NetFlowTemplates.Struct]:
+                                    nf_data_loc = netflow_sources[nfd["msg_src_ip"]]["template"][nfd["field_info_element_id"]][NetFlowTemplates.Struct][NetFlowDataTypes.Last_Switched][0]
+                                    nfd["flow_last"] = nf_data[nf_data_loc]
+                                else:
+                                    nfd["flow_last"] = 0
+
+                                if NetFlowDataTypes.L4_Src_Port in netflow_sources[nfd["msg_src_ip"]]["template"][nfd["field_info_element_id"]][NetFlowTemplates.Struct]:
+                                    nf_data_loc = netflow_sources[nfd["msg_src_ip"]]["template"][nfd["field_info_element_id"]][NetFlowTemplates.Struct][NetFlowDataTypes.L4_Src_Port][0]
+                                    nfd["src_port"] = nf_data[nf_data_loc]
+                                else:
+                                    nfd["src_port"] = None
+
+                                if NetFlowDataTypes.L4_Dst_Port in netflow_sources[nfd["msg_src_ip"]]["template"][nfd["field_info_element_id"]][NetFlowTemplates.Struct]:
+                                    nf_data_loc = netflow_sources[nfd["msg_src_ip"]]["template"][nfd["field_info_element_id"]][NetFlowTemplates.Struct][NetFlowDataTypes.L4_Dst_Port][0]
+                                    nfd["dst_port"] = nf_data[nf_data_loc]
+                                else:
+                                    nfd["dst_port"] = None
+
+                                if NetFlowDataTypes.TCP_Flags in netflow_sources[nfd["msg_src_ip"]]["template"][nfd["field_info_element_id"]][NetFlowTemplates.Struct]:
+                                    nf_data_loc = netflow_sources[nfd["msg_src_ip"]]["template"][nfd["field_info_element_id"]][NetFlowTemplates.Struct][NetFlowDataTypes.TCP_Flags][0]
+                                    nfd["tcp_flags"] = nf_data[nf_data_loc]
+                                else:
+                                    nfd["tcp_flags"] = None
+
+                                if NetFlowDataTypes.Protocol in netflow_sources[nfd["msg_src_ip"]]["template"][nfd["field_info_element_id"]][NetFlowTemplates.Struct]:
+                                    nf_data_loc = netflow_sources[nfd["msg_src_ip"]]["template"][nfd["field_info_element_id"]][NetFlowTemplates.Struct][NetFlowDataTypes.Protocol][0]
+                                    nfd["proto"] = nf_data[nf_data_loc]
+                                else:
+                                    nfd["proto"] = None
+
+                                if NetFlowDataTypes.Src_TOS in netflow_sources[nfd["msg_src_ip"]]["template"][nfd["field_info_element_id"]][NetFlowTemplates.Struct]:
+                                    nf_data_loc = netflow_sources[nfd["msg_src_ip"]]["template"][nfd["field_info_element_id"]][NetFlowTemplates.Struct][NetFlowDataTypes.Src_TOS][0]
+                                    nfd["src_tos"] = nf_data[nf_data_loc]
+                                else:
+                                    nfd["src_tos"] = None
+
+                                if NetFlowDataTypes.Dst_TOS in netflow_sources[nfd["msg_src_ip"]]["template"][nfd["field_info_element_id"]][NetFlowTemplates.Struct]:
+                                    nf_data_loc = netflow_sources[nfd["msg_src_ip"]]["template"][nfd["field_info_element_id"]][NetFlowTemplates.Struct][NetFlowDataTypes.Dst_TOS][0]
+                                    nfd["dst_tos"] = nf_data[nf_data_loc]
+                                else:
+                                    nfd["dst_tos"] = None
+
+                                if NetFlowDataTypes.Src_Mask in netflow_sources[nfd["msg_src_ip"]]["template"][nfd["field_info_element_id"]][NetFlowTemplates.Struct]:
+                                    nf_data_loc = netflow_sources[nfd["msg_src_ip"]]["template"][nfd["field_info_element_id"]][NetFlowTemplates.Struct][NetFlowDataTypes.Src_Mask][0]
+                                    nfd["src_mask4"] = nf_data[nf_data_loc]
+                                else:
+                                    nfd["src_mask4"] = None
+
+                                if NetFlowDataTypes.Dst_Mask in netflow_sources[nfd["msg_src_ip"]]["template"][nfd["field_info_element_id"]][NetFlowTemplates.Struct]:
+                                    nf_data_loc = netflow_sources[nfd["msg_src_ip"]]["template"][nfd["field_info_element_id"]][NetFlowTemplates.Struct][NetFlowDataTypes.Dst_Mask][0]
+                                    nfd["dst_mask4"] = nf_data[nf_data_loc]
+                                else:
+                                    nfd["dst_mask4"] = None
+
+                                if NetFlowDataTypes.IPv6_Src_Mask in netflow_sources[nfd["msg_src_ip"]]["template"][nfd["field_info_element_id"]][NetFlowTemplates.Struct]:
+                                    nf_data_loc = netflow_sources[nfd["msg_src_ip"]]["template"][nfd["field_info_element_id"]][NetFlowTemplates.Struct][NetFlowDataTypes.IPv6_Src_Mask][0]
+                                    nfd["src_mask6"] = nf_data[nf_data_loc]
+                                else:
+                                    nfd["src_mask6"] = None
+
+                                if NetFlowDataTypes.IPv6_Dst_Mask in netflow_sources[nfd["msg_src_ip"]]["template"][nfd["field_info_element_id"]][NetFlowTemplates.Struct]:
+                                    nf_data_loc = netflow_sources[nfd["msg_src_ip"]]["template"][nfd["field_info_element_id"]][NetFlowTemplates.Struct][NetFlowDataTypes.IPv6_Dst_Mask][0]
+                                    nfd["dst_mask6"] = nf_data[nf_data_loc]
+                                else:
+                                    nfd["dst_mask6"] = None
+
+                                NetFlow_FlowProcessor(adns_resolver, nfd)
+
+                        else:
+                            if config["debug"]:
+                                sys.stdout.write("NFP/%s/v%s/%s/%s/Version does not match with the known template.\n" % (nfd["msg_src_ip"], nfd["version"], nfd["field_info_element_id"], nfd["msg_type"]))
+                                sys.stdout.flush()
+                            return
+
+                    else:
+                        if config["debug"]:
+                            sys.stdout.write("NFP/%s/v%s/%s/%s/Unknown template ID.\n" % (nfd["msg_src_ip"], nfd["version"], nfd["field_info_element_id"], nfd["msg_type"]))
+                            sys.stdout.flush()
+                        return
+
+                else:
+                    # if config["debug"]:
+                    #    sys.stdout.write("NFP/%s/v%s/%s/%s/No templates received from the source.\n" % (nfd["msg_src_ip"], nfd["version"], nfd["field_info_element_id"], nfd["msg_type"]))
+                    #    sys.stdout.flush()
+                    return
+
             else:
-                netflow_sources[nfd["msg_src_ip"]]["v6_packets_processed"] += 1
+                if config["debug"]:
+                    sys.stdout.write("NFP/%s/v%s/%s/%s/Unknown message type.\n" % (nfd["msg_src_ip"], nfd["version"], nfd["field_info_element_id"], nfd["msg_type"]))
+                    sys.stdout.flush()
+                return
+
+            with lock:
+                if "." in nfd["msg_src_ip"]:
+                    netflow_sources[nfd["msg_src_ip"]]["v4_packets_processed"] += 1
+                else:
+                    netflow_sources[nfd["msg_src_ip"]]["v6_packets_processed"] += 1
 
     except KeyboardInterrupt:
         Running = False
@@ -864,7 +883,10 @@ def NetFlow_Processor(adns_resolver, nf_src_ip, data):
     except:
         if config["debug"]:
             e = str(sys.exc_info())
-            sys.stdout.write("NFP/%s/v%s/%s/%s/Exception: %s.\n" % (nfd["msg_src_ip"], nfd["version"], nfd["field_info_element_id"], nfd["msg_type"], e))
+            if (nfd["version"] == 9 or nfd["version"] == 10):
+                sys.stdout.write("NFP/%s/v%s/%s/%s/Exception: %s.\n" % (nfd["msg_src_ip"], nfd["version"], nfd["field_info_element_id"], nfd["msg_type"], e))
+            else:
+                sys.stdout.write("NFP/%s/v%s/%s/Exception: %s.\n" % (nfd["msg_src_ip"], nfd["version"], nfd["msg_type"], e))
             sys.stdout.flush()
         Running = False
         os._exit(1)
