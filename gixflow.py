@@ -371,10 +371,6 @@ def NetFlow_FlowProcessor(adns_resolver, nfd):
                 sys.stdout.write("NFP/%s/v%s/%s/IP2ASN DNS lookup not supported for IPv6 addresses.\n" % (nfd["msg_src_ip"], nfd["version"], nfd["msg_type"]))
                 sys.stdout.flush()
 
-    # !!! TO BE REMOVED !!!
-    if config["debug"] and nfd["msg_src_ip"] == "82.219.212.158":
-        print(nfd)
-
 
 def NetFlow_PacketProcessor(adns_resolver, nf_src_ip, data):
     global Running
@@ -401,7 +397,6 @@ def NetFlow_PacketProcessor(adns_resolver, nf_src_ip, data):
             if (nfd["msg_size"] - nfdec_pos) >= nfdec_size:
                 nfd["count"], nfd["sys_uptime"], nfd["unix_sec"], nfd["unix_nsec"] = struct.unpack(">HIII", data[nfdec_pos:nfdec_pos + nfdec_size])
                 nfdec_pos += nfdec_size
-                print (nfd["count"], nfd["sys_uptime"], nfd["unix_sec"], nfd["unix_nsec"])
 
             else:
                 if config["debug"]:
@@ -484,48 +479,19 @@ def NetFlow_PacketProcessor(adns_resolver, nf_src_ip, data):
                 else:
                     netflow_sources[nfd["msg_src_ip"]]["v6_packets_processed"] += 1
 
-        elif nfd["version"] == 9:
-            # H/Bits  16...31 - Count
-            # I/Bits  32...63 - System Uptime
-            # I/Bits  64...95 - UNIX seconds
-            # I/Bits  96..127 - Sequence Number
-            # I/Bits 128..159 - Source ID
-            # H/Bits 160..175 - Element ID
-            # H/Bits 176..191 - Field Length
-            nfdec_size = 22
-            if (nfd["msg_size"] - nfdec_pos) >= nfdec_size:
-                nfd["count"], nfd["sys_uptime"], nfd["unix_sec"], nfd["sequence_number"], nfd["source_id"], nfd["field_info_element_id"], nfd["field_length"] = struct.unpack(">HIIIIHH", data[nfdec_pos:nfdec_pos + nfdec_size])
-                nfdec_pos += nfdec_size
-
-            else:
-                if config["debug"]:
-                    sys.stdout.write("NFP/%s/v%s/%s/Not enough data left.\n" % (nfd["msg_src_ip"], nfd["version"], nfd["msg_type"]))
-                    sys.stdout.flush()
-                return
-
-        elif nfd["version"] == 10:
-            # H/Bits  16...31 - Message Length
-            # I/Bits  32...63 - Export Timestamp
-            # I/Bits  64...95 - Sequence Number
-            # I/Bits  96..127 - Observation Domain ID
-            # H/Bits 128..143 - Element ID
-            # H/Bits 144..159 - Field Length
-            nfdec_size = 18
-            if (nfd["msg_size"] - nfdec_pos) >= nfdec_size:
-                nfd["length"], nfd["export_time"], nfd["sequence_number"], nfd["domain_id"], nfd["field_info_element_id"], nfd["field_length"] = struct.unpack(">HIIIHH", data[nfdec_pos:nfdec_pos + nfdec_size])
-                nfdec_pos += nfdec_size
-
-            else:
-                if config["debug"]:
-                    sys.stdout.write("NFP/%s/v%s/%s/Not enough data left.\n" % (nfd["msg_src_ip"], nfd["version"], nfd["msg_type"]))
-                    sys.stdout.flush()
-                return
-
-            # Bits 160..191 - Enterprise Number (when 1st bit in Element ID is set)
-            if nfd["field_info_element_id"] & NetflowMessageID.Enterprise == NetflowMessageID.Enterprise:
-                nfdec_size = 4
+        if (nfd["version"] == 9 or nfd["version"] == 10):
+            # NetFlow v9 - Header
+            if nfd["version"] == 9:
+                # H/Bits  16...31 - Count
+                # I/Bits  32...63 - System Uptime
+                # I/Bits  64...95 - UNIX seconds
+                # I/Bits  96..127 - Sequence Number
+                # I/Bits 128..159 - Source ID
+                # H/Bits 160..175 - Element ID
+                # H/Bits 176..191 - Field Length
+                nfdec_size = 22
                 if (nfd["msg_size"] - nfdec_pos) >= nfdec_size:
-                    nfd["enterprise_number"], = struct.unpack(">I", data[nfdec_pos:nfdec_pos + nfdec_size])
+                    nfd["count"], nfd["sys_uptime"], nfd["unix_sec"], nfd["sequence_number"], nfd["source_id"], nfd["field_info_element_id"], nfd["field_length"] = struct.unpack(">HIIIIHH", data[nfdec_pos:nfdec_pos + nfdec_size])
                     nfdec_pos += nfdec_size
 
                 else:
@@ -534,14 +500,39 @@ def NetFlow_PacketProcessor(adns_resolver, nf_src_ip, data):
                         sys.stdout.flush()
                     return
 
-        else:
-            if config["debug"]:
-                sys.stdout.write("NFP/%s/v%s/%s/Unsupported version.\n" % (nfd["msg_src_ip"], nfd["version"], nfd["msg_type"]))
-                sys.stdout.flush()
-            return
+            # NetFlow v10 - Header
+            elif nfd["version"] == 10:
+                # H/Bits  16...31 - Message Length
+                # I/Bits  32...63 - Export Timestamp
+                # I/Bits  64...95 - Sequence Number
+                # I/Bits  96..127 - Observation Domain ID
+                # H/Bits 128..143 - Element ID
+                # H/Bits 144..159 - Field Length
+                nfdec_size = 18
+                if (nfd["msg_size"] - nfdec_pos) >= nfdec_size:
+                    nfd["length"], nfd["export_time"], nfd["sequence_number"], nfd["domain_id"], nfd["field_info_element_id"], nfd["field_length"] = struct.unpack(">HIIIHH", data[nfdec_pos:nfdec_pos + nfdec_size])
+                    nfdec_pos += nfdec_size
 
-        # NetFlow v10 (IPFIX) & v9 - Templates
-        if (nfd["version"] == 9 or nfd["version"] == 10):
+                else:
+                    if config["debug"]:
+                        sys.stdout.write("NFP/%s/v%s/%s/Not enough data left.\n" % (nfd["msg_src_ip"], nfd["version"], nfd["msg_type"]))
+                        sys.stdout.flush()
+                    return
+
+                # Bits 160..191 - Enterprise Number (when 1st bit in Element ID is set)
+                if nfd["field_info_element_id"] & NetflowMessageID.Enterprise == NetflowMessageID.Enterprise:
+                    nfdec_size = 4
+                    if (nfd["msg_size"] - nfdec_pos) >= nfdec_size:
+                        nfd["enterprise_number"], = struct.unpack(">I", data[nfdec_pos:nfdec_pos + nfdec_size])
+                        nfdec_pos += nfdec_size
+
+                    else:
+                        if config["debug"]:
+                            sys.stdout.write("NFP/%s/v%s/%s/Not enough data left.\n" % (nfd["msg_src_ip"], nfd["version"], nfd["msg_type"]))
+                            sys.stdout.flush()
+                        return
+
+            # NetFlow v10 (IPFIX) & v9 - Templates
             if (nfd["field_info_element_id"] == NetflowMessageID.Template or nfd["field_info_element_id"] == NetflowMessageID.TemplateV9):
 
                 nfd["msg_type"] = "template"
@@ -875,6 +866,12 @@ def NetFlow_PacketProcessor(adns_resolver, nf_src_ip, data):
                     netflow_sources[nfd["msg_src_ip"]]["v4_packets_processed"] += 1
                 else:
                     netflow_sources[nfd["msg_src_ip"]]["v6_packets_processed"] += 1
+
+        else:
+            if config["debug"]:
+                sys.stdout.write("NFP/%s/v%s/%s/Unsupported version.\n" % (nfd["msg_src_ip"], nfd["version"], nfd["msg_type"]))
+                sys.stdout.flush()
+            return
 
     except KeyboardInterrupt:
         Running = False
