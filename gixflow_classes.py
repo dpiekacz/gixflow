@@ -1,6 +1,7 @@
 """
 gixglow_classes.py
 Created by Daniel Piekacz on 2014-06-01.
+Updated on 2014-06-01.
 http://gix.net.pl
 """
 
