@@ -3,8 +3,15 @@ Version explained:
  minor : increase on new features
  bug   : increase on bug fixes
 
+Version 0.2.0 - 01th June 2014
+ * Processing NetFlow v9/v10 templates.
+ * Processing NetFlow v9/v10 data based on learnt earlier templates.
+ * Adding support for IPv6 flows.
+ * Adding stats for received and processed NetFlow packets, separate for IPv4 and IPv6.
+ * Improving debug logging.
+
 Version 0.1.x - 26th May 2014
- * Adding support for IPv6.
+ * Adding support for IPv6. GIXflow process can now listen on an IPv6 address.
  * Splitting NetFlow IPv4 and IPv6 receivers to separate threads.
  * Accounting received NetFlow packets.
  * Adding locks when adding prefixes to the prefix cache.
