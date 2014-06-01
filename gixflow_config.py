@@ -23,10 +23,10 @@ config["db_file"] = "/opt/gixflow/gixflow.db"
 # Set to blank to bind to all IP addresses.
 config["listen_port"] = 9000
 
-config["listen_ipv4"] = "178.32.56.59"
+config["listen_ipv4"] = "198.51.100.255"
 config["listen_ipv4_enable"] = True
 
-config["listen_ipv6"] = "2001:41d0:2:541b::2"
+config["listen_ipv6"] = "2001:db8::ffff"
 config["listen_ipv6_enable"] = True
 
 # Size of the NetFlow queue.
