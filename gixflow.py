@@ -3,7 +3,7 @@
 """
 gixglow.py
 Created by Daniel Piekacz on 2014-01-28.
-Updated on 2014-06-01.
+Updated on 2014-06-04.
 http://gix.net.pl
 """
 import os
@@ -12,9 +12,9 @@ import time
 import struct
 import socket
 
-# from netaddr import IPNetwork
+from netaddr import IPNetwork
 from daemon import daemon
-from threading import Thread, RLock
+import threading
 import Queue
 
 import radix
@@ -135,13 +135,23 @@ def RFCPrefixTable():
     return prefix_cache
 
 
-def IP2ASNresolver(adns_resolver, ip_addr):
+def IP2ASNresolver(adns_resolver, ip_ver, ip_addr):
     global Running, prefix_cache
 
     try:
-        ip_addr_ar = ip_addr.split(".")
-        ip_net = ip_addr_ar[0] + "." + ip_addr_ar[1] + "." + ip_addr_ar[2] + ".0"
-        ip_rev = "0." + ip_addr_ar[2] + "." + ip_addr_ar[1] + "." + ip_addr_ar[0]
+        if ip_ver == 4:
+            cymru_dns = ".origin.asn.cymru.com"
+            ip_tmp = IPNetwork(ip_addr + "/" + IP2ASN_def_mask.IPv4).network
+            ip_net = str(ip_tmp)
+            ip_rev = ip_tmp.reverse_dns[0:-14]
+        elif ip_ver == 6:
+            cymru_dns = ".origin6.asn.cymru.com"
+            ip_tmp = IPNetwork(ip_addr + "/" + IP2ASN_def_mask.IPv6).network
+            ip_net = str(ip_tmp)
+            ip_rev = ip_tmp.reverse_dns[0:-10]
+        else:
+            asn = ASNtype.Unknown
+            return asn
 
         ts = int(time.time())
         rnode = prefix_cache.search_best(ip_addr)
@@ -150,7 +160,7 @@ def IP2ASNresolver(adns_resolver, ip_addr):
             qac = 0
 
             while ((qa is None or qa[3] == ()) and qac <= 1):
-                qa = adns_resolver.synchronous(ip_rev + ".origin.asn.cymru.com", adns.rr.TXT)
+                qa = adns_resolver.synchronous(ip_rev + cymru_dns, adns.rr.TXT)
                 qac += 1
 
             if qa is not None and qa[3] != ():
@@ -169,7 +179,10 @@ def IP2ASNresolver(adns_resolver, ip_addr):
                 asn = ASNtype.Unknown
 
                 with lock:
-                    prefix = prefix_cache.add(ip_net + "/24")
+                    if ip_ver == 4:
+                        prefix = prefix_cache.add(ip_net + "/" + IP2ASN_def_mask.IPv4)
+                    else:
+                        prefix = prefix_cache.add(ip_net + "/" + IP2ASN_def_mask.IPv6)
                     prefix.data["asn"] = asn
                     prefix.data["exp"] = ts + PrefixExpire.Short
 
@@ -179,26 +192,20 @@ def IP2ASNresolver(adns_resolver, ip_addr):
 
             else:
                 prefix_cache.delete(rnode.prefix)
-                asn = IP2ASNresolver(adns_resolver, ip_addr)
+                asn = IP2ASNresolver(adns_resolver, ip_ver, ip_addr)
 
     except KeyboardInterrupt:
         Running = False
         os._exit(1)
 
     except:
-        asn = ASNtype.Unknown
-
-        with lock:
-            prefix = prefix_cache.add(ip_net + "/24")
-            prefix.data["asn"] = asn
-            prefix.data["exp"] = ts + PrefixExpire.Short
-
         if config["debug"]:
             e = str(sys.exc_info())
             sys.stdout.write("I2A/%s/Exception: %s.\n" % (ip_addr, e))
             sys.stdout.flush()
 
-        pass
+        asn = ASNtype.Unknown
+        return asn
 
     return int(asn)
 
@@ -360,16 +367,17 @@ def NetFlow_FlowProcessor(adns_resolver, nfd):
     if config["ip2asn"]:
         if nfd["src_ip4"] is not None and nfd["dst_ip4"] is not None:
             if nfd["src_as"] is None or nfd["src_as"] == ASNtype.Unknown or (nfd["src_as"] >= 64512 and nfd["src_as"] <= 65534) or (nfd["src_as"] >= 4200000000 and nfd["src_as"] <= 4294967294):
-                nfd["src_as"] = IP2ASNresolver(adns_resolver, nfd["src_ip4"])
+                nfd["src_as"] = IP2ASNresolver(adns_resolver, 4, nfd["src_ip4"])
 
             if nfd["dst_as"] is None or nfd["dst_as"] == ASNtype.Unknown or (nfd["dst_as"] >= 64512 and nfd["dst_as"] <= 65534) or (nfd["dst_as"] >= 4200000000 and nfd["dst_as"] <= 4294967294):
-                nfd["dst_as"] = IP2ASNresolver(adns_resolver, nfd["dst_ip4"])
+                nfd["dst_as"] = IP2ASNresolver(adns_resolver, 4, nfd["dst_ip4"])
 
         elif nfd["src_ip6"] is not None and nfd["dst_ip6"] is not None:
-            # IP2ASN DNS lookup not supported for IPv6
-            if config["debug"]:
-                sys.stdout.write("NFP/%s/v%s/%s/IP2ASN DNS lookup not supported for IPv6 addresses.\n" % (nfd["msg_src_ip"], nfd["version"], nfd["msg_type"]))
-                sys.stdout.flush()
+            if nfd["src_as"] is None or nfd["src_as"] == ASNtype.Unknown or (nfd["src_as"] >= 64512 and nfd["src_as"] <= 65534) or (nfd["src_as"] >= 4200000000 and nfd["src_as"] <= 4294967294):
+                nfd["src_as"] = IP2ASNresolver(adns_resolver, 6, nfd["src_ip6"])
+
+            if nfd["dst_as"] is None or nfd["dst_as"] == ASNtype.Unknown or (nfd["dst_as"] >= 64512 and nfd["dst_as"] <= 65534) or (nfd["dst_as"] >= 4200000000 and nfd["dst_as"] <= 4294967294):
+                nfd["dst_as"] = IP2ASNresolver(adns_resolver, 6, nfd["dst_ip6"])
 
 
 def NetFlow_PacketProcessor(adns_resolver, nf_src_ip, data):
@@ -583,51 +591,51 @@ def NetFlow_PacketProcessor(adns_resolver, nf_src_ip, data):
                     nfd_template_struct = {}
                     nfd_template_size = 0
                     while i != nfd["template_field_count"]:
-                        if nfd_template[(2*i)+1] == 1:
-                            nfd_template_struct[nfd_template[(2*i)]] = (j, 1, 1)
+                        if nfd_template[(2 * i) + 1] == 1:
+                            nfd_template_struct[nfd_template[(2 * i)]] = (j, 1, 1)
                             j += 1
                             nfd_template_unpack = nfd_template_unpack + "B"
                             nfd_template_size += 1
 
-                        elif nfd_template[(2*i)+1] == 2:
-                            nfd_template_struct[nfd_template[(2*i)]] = (j, 1, 2)
+                        elif nfd_template[(2 * i) + 1] == 2:
+                            nfd_template_struct[nfd_template[(2 * i)]] = (j, 1, 2)
                             j += 1
                             nfd_template_unpack = nfd_template_unpack + "H"
                             nfd_template_size += 2
 
-                        elif nfd_template[(2*i)+1] == 3:
-                            nfd_template_struct[nfd_template[(2*i)]] = (j, 3, 3)
+                        elif nfd_template[(2 * i) + 1] == 3:
+                            nfd_template_struct[nfd_template[(2 * i)]] = (j, 3, 3)
                             j += 3
                             nfd_template_unpack = nfd_template_unpack + "BBB"
                             nfd_template_size += 3
 
-                        elif nfd_template[(2*i)+1] == 4:
-                            nfd_template_struct[nfd_template[(2*i)]] = (j, 1, 4)
+                        elif nfd_template[(2 * i) + 1] == 4:
+                            nfd_template_struct[nfd_template[(2 * i)]] = (j, 1, 4)
                             j += 1
                             nfd_template_unpack = nfd_template_unpack + "I"
                             nfd_template_size += 4
 
-                        elif nfd_template[(2*i)+1] == 6:
-                            nfd_template_struct[nfd_template[(2*i)]] = (j, 3, 6)
+                        elif nfd_template[(2 * i) + 1] == 6:
+                            nfd_template_struct[nfd_template[(2 * i)]] = (j, 3, 6)
                             j += 3
                             nfd_template_unpack = nfd_template_unpack + "HHH"
                             nfd_template_size += 6
 
-                        elif nfd_template[(2*i)+1] == 8:
-                            nfd_template_struct[nfd_template[(2*i)]] = (j, 1, 8)
+                        elif nfd_template[(2 * i) + 1] == 8:
+                            nfd_template_struct[nfd_template[(2 * i)]] = (j, 1, 8)
                             j += 1
                             nfd_template_unpack = nfd_template_unpack + "Q"
                             nfd_template_size += 8
 
-                        elif nfd_template[(2*i)+1] == 16:
-                            nfd_template_struct[nfd_template[(2*i)]] = (j, 2, 16)
+                        elif nfd_template[(2 * i) + 1] == 16:
+                            nfd_template_struct[nfd_template[(2 * i)]] = (j, 2, 16)
                             j += 2
                             nfd_template_unpack = nfd_template_unpack + "QQ"
                             nfd_template_size += 16
 
                         else:
                             if config["debug"]:
-                                sys.stdout.write("NFP/%s/v%s/%s/%s/Not valid field size: %s,%s,%s.\n" % (nfd["msg_src_ip"], nfd["version"], nfd["template_id"], nfd["msg_type"], i, nfd_template[(2*i)], nfd_template[(2*i)+1]))
+                                sys.stdout.write("NFP/%s/v%s/%s/%s/Not valid field size: %s,%s,%s.\n" % (nfd["msg_src_ip"], nfd["version"], nfd["template_id"], nfd["msg_type"], i, nfd_template[(2 * i)], nfd_template[(2 * i) + 1]))
                                 sys.stdout.flush()
                             return
                         i += 1
@@ -850,9 +858,9 @@ def NetFlow_PacketProcessor(adns_resolver, nf_src_ip, data):
                         return
 
                 else:
-                    # if config["debug"]:
-                    #    sys.stdout.write("NFP/%s/v%s/%s/%s/No templates received from the source.\n" % (nfd["msg_src_ip"], nfd["version"], nfd["field_info_element_id"], nfd["msg_type"]))
-                    #    sys.stdout.flush()
+                    if config["debug"]:
+                        sys.stdout.write("NFP/%s/v%s/%s/%s/No templates received from the source.\n" % (nfd["msg_src_ip"], nfd["version"], nfd["field_info_element_id"], nfd["msg_type"]))
+                        sys.stdout.flush()
                     return
 
             else:
@@ -915,21 +923,24 @@ def GIXFlow():
         sqlite_con.close()
         pass
 
-    statsd = Thread(target=Stats_Worker)
+    statsd = threading.Thread(target=Stats_Worker)
     statsd.daemon = True
     statsd.start()
 
+    netflowd = {}
+    netflowd_nb = 0
     for i in range(config["netflow_workers"]):
-        netflowd = Thread(target=NetFlow_Worker)
-        netflowd.daemon = True
-        netflowd.start()
+        netflowd[netflowd_nb] = threading.Thread(target=NetFlow_Worker)
+        netflowd[netflowd_nb].daemon = True
+        netflowd[netflowd_nb].start()
+        netflowd_nb += 1
         if config["debug"]:
             sys.stdout.write("GF/NetFlow worker %s started.\n" % (i))
             sys.stdout.flush()
 
     if config["listen_ipv4_enable"]:
         netrecvd = "ipv4"
-        netrecvd4 = Thread(target=NetFlow_Receiver, args=(netrecvd,))
+        netrecvd4 = threading.Thread(target=NetFlow_Receiver, args=(netrecvd,))
         netrecvd4.daemon = True
         netrecvd4.start()
         if config["debug"]:
@@ -938,7 +949,7 @@ def GIXFlow():
 
     if config["listen_ipv6_enable"]:
         netrecvd = "ipv6"
-        netrecvd6 = Thread(target=NetFlow_Receiver, args=(netrecvd,))
+        netrecvd6 = threading.Thread(target=NetFlow_Receiver, args=(netrecvd,))
         netrecvd6.daemon = True
         netrecvd6.start()
         if config["debug"]:
@@ -991,7 +1002,7 @@ if __name__ == '__main__':
             netflow_queue = Queue.Queue(maxsize=config["netflow_queue"])
 
             # Initialize a lock.
-            lock = RLock()
+            lock = threading.RLock()
 
             if config["debug"]:
                 daemon = GIXFlowDaemon(config["pid_file"], stdout=config["log_file"], stderr=config["log_file"])
@@ -1019,7 +1030,7 @@ if __name__ == '__main__':
             netflow_queue = Queue.Queue(maxsize=config["netflow_queue"])
 
             # Initialize a lock.
-            lock = RLock()
+            lock = threading.RLock()
 
             # Starting GIXflow as a foreground process.
             GIXFlow()

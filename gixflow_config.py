@@ -1,7 +1,7 @@
 """
 gixglow_config.py
 Created by Daniel Piekacz on 2014-06-01.
-Updated on 2014-06-01.
+Updated on 2014-06-04.
 http://gix.net.pl
 """
 #
@@ -33,7 +33,7 @@ config["listen_ipv6_enable"] = True
 config["netflow_queue"] = 50000
 
 # Number of NetFlow workers.
-config["netflow_workers"] = 1
+config["netflow_workers"] = 10
 
 # Enable/Disable: Forwarding NetFlow data to another collector.
 config["forwardto_enable"] = False

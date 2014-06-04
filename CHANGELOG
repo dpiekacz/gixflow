@@ -3,8 +3,11 @@ Version explained:
  minor : increase on new features
  bug   : increase on bug fixes
 
-Version 0.2.x - 1st June 2014
+Version 0.3.0 - 4th June 2014
  * Processing NetFlow v1 and v5 flow data.
+ * Adding support for IP2ASN DNS lookup for IPv6 addresses.
+
+Version 0.2.1 - 2nd June 2014
  * Bug fixes.
 
 Version 0.2.0 - 1st June 2014

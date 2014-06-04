@@ -1,7 +1,7 @@
 """
 gixglow_classes.py
 Created by Daniel Piekacz on 2014-06-01.
-Updated on 2014-06-01.
+Updated on 2014-06-04.
 http://gix.net.pl
 """
 
@@ -166,3 +166,8 @@ class TCPflags:
     URG = 0x20
     ECE = 0x40
     CWR = 0x80
+
+
+class IP2ASN_def_mask:
+    IPv4 = "24"
+    IPv6 = "48"
