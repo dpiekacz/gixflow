@@ -3,6 +3,20 @@ Version explained:
  minor : increase on new features
  bug   : increase on bug fixes
 
+Version 0.4.0 - 14th June 2014
+ * Adding realtime graphs for:
+    - total bandwidth of TCP/UDP/ICMP/IPv6/OTHER traffic
+    - packet rate for TCP/UDP/ICMP/IPv6/OTHER traffic
+    - received and processed packets
+    - received and processed flows
+    - prefix cache size
+    - flow queue size
+    - sent DNS queries
+   The realtime graphs use Highcharts charting library which is not free for commercial use.
+ * Adding HTTP server (with SSL support) for stats access.
+ * Adding a tool to convert MaxMind geo data (ip2asn and ip2country) to a SQLite3 database (https://www.maxmind.com).
+ * Adding support for DNS based IP2ASN mapping service from Route Views (http://www.routeviews.org).
+
 Version 0.3.0 - 4th June 2014
  * Processing NetFlow v1 and v5 flow data.
  * Adding support for IP2ASN DNS lookup for IPv6 addresses.

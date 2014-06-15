@@ -1,0 +1,432 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01//EN" "http://www.w3.org/TR/html4/strict.dtd">
+<html>
+    <head>
+        <script type="text/javascript" src="/jquery.js"></script>
+        <script type="text/javascript" src="/highcharts.js"></script>
+        <script>
+        var chart1; // global
+        var chart2; // global
+        var chart3; // global
+        var chart4; // global
+        var chart5; // global
+        var chart6; // global
+        var chart7; // global
+        lenght = 20
+
+        function requestData1() {
+            $.ajax({
+                url: '/stats-packets/',
+                success: function(point) {
+                    var series = chart1.series[0],
+                        shift = series.data.length > lenght;
+                        values = eval(point);
+                    chart1.series[0].addPoint([values[0], values[1]], true, shift);
+                    chart1.series[1].addPoint([values[0], values[2]], true, shift);
+                    setTimeout(requestData1, 1000);
+                },
+                cache: false,
+            });
+        }
+        function requestData2() {
+            $.ajax({
+                url: '/stats-flows/',
+                success: function(point) {
+                    var series = chart2.series[0],
+                        shift = series.data.length > lenght;
+                        values = eval(point);
+                    chart2.series[0].addPoint([values[0], values[1]], true, shift);
+                    chart2.series[1].addPoint([values[0], values[2]], true, shift);
+                    setTimeout(requestData2, 1000);
+                },
+                cache: false,
+            });
+        }
+        function requestData3() {
+            $.ajax({
+                url: '/stats-prefixes/',
+                success: function(point) {
+                    var series = chart3.series[0],
+                        shift = series.data.length > lenght;
+                    chart3.series[0].addPoint(eval(point), true, shift);
+                    setTimeout(requestData3, 1000);
+                },
+                cache: false,
+            });
+        }
+        function requestData4() {
+            $.ajax({
+                url: '/stats-queue/',
+                success: function(point) {
+                    var series = chart4.series[0],
+                        shift = series.data.length > lenght;
+                    chart4.series[0].addPoint(eval(point), true, shift);
+                    setTimeout(requestData4, 1000);
+                },
+                cache: false,
+            });
+        }
+        function requestData5() {
+            $.ajax({
+                url: '/stats-dnsq/',
+                success: function(point) {
+                    var series = chart5.series[0],
+                        shift = series.data.length > lenght;
+                    chart5.series[0].addPoint(eval(point), true, shift);
+                    setTimeout(requestData5, 1000);
+                },
+                cache: false,
+            });
+        }
+        function requestData6() {
+            $.ajax({
+                url: '/stats-proto-bytes/',
+                success: function(point) {
+                    var series = chart6.series[0],
+                        shift = series.data.length > lenght;
+                        values = eval(point);
+                    chart6.series[0].addPoint([values[0], values[1] * 8], true, shift);
+                    chart6.series[1].addPoint([values[0], values[2] * 8], true, shift);
+                    chart6.series[2].addPoint([values[0], values[3] * 8], true, shift);
+                    chart6.series[3].addPoint([values[0], values[4] * 8], true, shift);
+                    chart6.series[4].addPoint([values[0], values[5] * 8], true, shift);
+                    setTimeout(requestData6, 5000);
+                },
+                cache: false,
+            });
+        }
+        function requestData7() {
+            $.ajax({
+                url: '/stats-proto-packets/',
+                success: function(point) {
+                    var series = chart7.series[0],
+                        shift = series.data.length > lenght;
+                        values = eval(point);
+                    chart7.series[0].addPoint([values[0], values[1]], true, shift);
+                    chart7.series[1].addPoint([values[0], values[2]], true, shift);
+                    chart7.series[2].addPoint([values[0], values[3]], true, shift);
+                    chart7.series[3].addPoint([values[0], values[4]], true, shift);
+                    chart7.series[4].addPoint([values[0], values[5]], true, shift);
+                    setTimeout(requestData7, 5000);
+                },
+                cache: false,
+            });
+        }
+
+
+        $(document).ready(function() {
+            chart1 = new Highcharts.Chart({
+                chart: {
+                    renderTo: 'container1',
+                    defaultSeriesType: 'spline',
+                    events: {
+                        load: requestData1
+                    }
+                },
+                title: {
+                    text: ''
+                },
+                xAxis: {
+                    type: 'datetime',
+                    tickPixelInterval: 150,
+                    maxZoom: lenght * 1000
+                },
+                yAxis: {
+                    minPadding: 0.2,
+                    maxPadding: 0.2,
+                    plotLines: [{
+                        value: 0,
+                        width: 2,
+                        color: '#808080'
+                    }],
+                    title: {
+                        text: 'Nb of packets / sec',
+                        margin: 10
+                    }
+                },
+                legend: {
+                    layout: 'horizontal',
+                    align: 'center',
+                    verticalAlign: 'bottom',
+                    borderWidth: 0
+                },
+                series: [{
+                    name: 'Received', data: []
+                }, {
+                    name: 'Processed', data: []
+                }]
+            });
+
+            chart2 = new Highcharts.Chart({
+                chart: {
+                    renderTo: 'container2',
+                    defaultSeriesType: 'spline',
+                    events: {
+                        load: requestData2
+                    }
+                },
+                title: {
+                    text: ''
+                },
+                xAxis: {
+                    type: 'datetime',
+                    tickPixelInterval: 150,
+                    maxZoom: lenght * 1000
+                },
+                yAxis: {
+                    minPadding: 0.2,
+                    maxPadding: 0.2,
+                    plotLines: [{
+                        value: 0,
+                        width: 2,
+                        color: '#808080'
+                    }],
+                    title: {
+                        text: 'Nb of flows / sec',
+                        margin: 10
+                    }
+                },
+                legend: {
+                    layout: 'horizontal',
+                    align: 'center',
+                    verticalAlign: 'bottom',
+                    borderWidth: 0
+                },
+                series: [{
+                    name: 'Received', data: []
+                }, {
+                    name: 'Processed', data: []
+                }]
+            });
+
+            chart3 = new Highcharts.Chart({
+                chart: {
+                    renderTo: 'container3',
+                    defaultSeriesType: 'spline',
+                    events: {
+                        load: requestData3
+                    }
+                },
+                title: {
+                    text: ''
+                },
+                xAxis: {
+                    type: 'datetime',
+                    tickPixelInterval: 150,
+                    maxZoom: lenght * 1000
+                },
+                yAxis: {
+                    minPadding: 0.2,
+                    maxPadding: 0.2,
+                    plotLines: [{
+                        value: 0,
+                        width: 2,
+                        color: '#808080'
+                    }],
+                    title: {
+                        text: 'Nb of entries',
+                        margin: 10
+                    }
+                },
+                legend: {
+                    layout: 'horizontal',
+                    align: 'center',
+                    verticalAlign: 'bottom',
+                    borderWidth: 0
+                },
+                series: [{
+                    name: 'Prefix Cache', data: []
+                }]
+            });
+
+            chart4 = new Highcharts.Chart({
+                chart: {
+                    renderTo: 'container4',
+                    defaultSeriesType: 'spline',
+                    events: {
+                        load: requestData4
+                    }
+                },
+                title: {
+                    text: ''
+                },
+                xAxis: {
+                    type: 'datetime',
+                    tickPixelInterval: 150,
+                    maxZoom: lenght * 1000
+                },
+                yAxis: {
+                    minPadding: 0.2,
+                    maxPadding: 0.2,
+                    plotLines: [{
+                        value: 0,
+                        width: 2,
+                        color: '#808080'
+                    }],
+                    title: {
+                        text: 'Nb of entries',
+                        margin: 10
+                    }
+                },
+                legend: {
+                    layout: 'horizontal',
+                    align: 'center',
+                    verticalAlign: 'bottom',
+                    borderWidth: 0
+                },
+                series: [{
+                    name: 'Flow Queue', data: []
+                }]
+            });
+
+            chart5 = new Highcharts.Chart({
+                chart: {
+                    renderTo: 'container5',
+                    defaultSeriesType: 'spline',
+                    events: {
+                        load: requestData5
+                    }
+                },
+                title: {
+                    text: ''
+                },
+                xAxis: {
+                    type: 'datetime',
+                    tickPixelInterval: 150,
+                    maxZoom: lenght * 1000
+                },
+                yAxis: {
+                    minPadding: 0.2,
+                    maxPadding: 0.2,
+                    plotLines: [{
+                        value: 0,
+                        width: 2,
+                        color: '#808080'
+                    }],
+                    title: {
+                        text: 'Nb of DNS queries / sec',
+                        margin: 10
+                    }
+                },
+                legend: {
+                    layout: 'horizontal',
+                    align: 'center',
+                    verticalAlign: 'bottom',
+                    borderWidth: 0
+                },
+                series: [{
+                    name: 'DNS queries', data: []
+                }]
+            });
+
+            chart6 = new Highcharts.Chart({
+                chart: {
+                    renderTo: 'container6',
+                    defaultSeriesType: 'spline',
+                    events: {
+                        load: requestData6
+                    }
+                },
+                title: {
+                    text: ''
+                },
+                xAxis: {
+                    type: 'datetime',
+                    tickPixelInterval: 150,
+                    maxZoom: lenght * 5000
+                },
+                yAxis: {
+                    minPadding: 0.2,
+                    maxPadding: 0.2,
+                    plotLines: [{
+                        value: 0,
+                        width: 2,
+                        color: '#808080'
+                    }],
+                    title: {
+                        text: 'Bits / sec',
+                        margin: 10
+                    }
+                },
+                legend: {
+                    layout: 'horizontal',
+                    align: 'center',
+                    verticalAlign: 'bottom',
+                    borderWidth: 0
+                },
+                series: [{
+                    name: 'TCP', data: []
+                }, {
+                    name: 'UDP', data: []
+                }, {
+                    name: 'ICMP', data: []
+                }, {
+                    name: 'IPv6', data: []
+                }, {
+                    name: 'OTHER', data: []
+                }]
+            });
+
+            chart7 = new Highcharts.Chart({
+                chart: {
+                    renderTo: 'container7',
+                    defaultSeriesType: 'spline',
+                    events: {
+                        load: requestData7
+                    }
+                },
+                title: {
+                    text: ''
+                },
+                xAxis: {
+                    type: 'datetime',
+                    tickPixelInterval: 150,
+                    maxZoom: lenght * 5000
+                },
+                yAxis: {
+                    minPadding: 0.2,
+                    maxPadding: 0.2,
+                    plotLines: [{
+                        value: 0,
+                        width: 2,
+                        color: '#808080'
+                    }],
+                    title: {
+                        text: 'Packets / sec',
+                        margin: 10
+                    }
+                },
+                legend: {
+                    layout: 'horizontal',
+                    align: 'center',
+                    verticalAlign: 'bottom',
+                    borderWidth: 0
+                },
+                series: [{
+                    name: 'TCP', data: []
+                }, {
+                    name: 'UDP', data: []
+                }, {
+                    name: 'ICMP', data: []
+                }, {
+                    name: 'IPv6', data: []
+                }, {
+                    name: 'OTHER', data: []
+                }]
+            });
+
+
+
+
+        });
+        </script>
+    </head>
+    <body>
+        <div id="container1" style="width: 600px; height: 300px; float: left; margin: 0 auto"></div>
+        <div id="container2" style="width: 600px; height: 300px; float: left; margin: 0 auto"></div>
+        <div id="container3" style="width: 600px; height: 300px; float: left; margin: 0 auto"></div>
+        <div id="container4" style="width: 600px; height: 300px; float: left; margin: 0 auto"></div>
+        <div id="container5" style="width: 600px; height: 300px; float: left; margin: 0 auto"></div>
+        <div id="container6" style="width: 600px; height: 300px; float: left; margin: 0 auto"></div>
+        <div id="container7" style="width: 600px; height: 300px; float: left; margin: 0 auto"></div>
+    </body>
+</html>
