@@ -1,3 +1,5 @@
+- Rewrite GIXflow code to use multiprocessing and ØMQ python libraries
+- sFlow support
 - Integrating ExaBGP to import prefixes from a BGP session instead of using DNS based IP2ASN mapping services
 - Importing MRT BGP routes dumps
 - Spliting flows from a single packet into separate packets when after adding src/dst ASNs size of the processed packet would become larger than MTU

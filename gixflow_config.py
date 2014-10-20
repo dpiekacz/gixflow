@@ -2,7 +2,7 @@
 gixglow_config.py
 Created by Daniel Piekacz on 2014-06-01.
 Updated on 2014-06-15.
-http://gix.net.pl
+https://gixtools.net
 """
 #
 # Configuration section.

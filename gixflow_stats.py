@@ -2,7 +2,7 @@
 gixflow_stats.py
 Created by Daniel Piekacz on 2014-06-13.
 Updated on 2014-06-15.
-http://gix.net.pl
+https://gixtools.net
 """
 
 

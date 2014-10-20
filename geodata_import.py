@@ -4,7 +4,7 @@
 geodata_import.py
 Created by Daniel Piekacz on 2014-06-07.
 Updated on 2014-06-15.
-http://gix.net.pl
+https://gixtools.net
 """
 import string
 import netaddr
