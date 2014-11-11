@@ -1,7 +1,7 @@
 """
 gixglow_classes.py
 Created by Daniel Piekacz on 2014-06-01.
-Updated on 2014-06-04.
+Updated on 2014-11-11.
 https://gixtools.net
 """
 
@@ -16,11 +16,10 @@ class NetflowMessageID:
 
 
 class NetFlowTemplates:
-    Version = 0
-    Size = 1
-    Template = 2
-    Unpack = 3
-    Struct = 4
+    Size = 0
+    Template = 1
+    Unpack = 2
+    Struct = 3
 
 
 class NetFlowDataTypes:

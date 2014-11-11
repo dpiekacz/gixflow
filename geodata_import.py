@@ -3,7 +3,7 @@
 """
 geodata_import.py
 Created by Daniel Piekacz on 2014-06-07.
-Updated on 2014-06-15.
+Updated on 2014-11-11.
 https://gixtools.net
 """
 import string
@@ -40,8 +40,9 @@ for line in f:
 sqlite_con.commit()
 f.close()
 
+""" Commas are not removed from companies' names, so csv is not easy to import.
 print ("IP2ASN v6")
-f = open('geodata/GeoIPASNumv6-2.csv', 'r')
+f = open('geodata/GeoIPASNum2v6.csv', 'r')
 i = 0
 j = 0
 for line in f:
@@ -64,6 +65,7 @@ for line in f:
 
 sqlite_con.commit()
 f.close()
+"""
 
 print ("IP2COUNTRY v4")
 f = open('geodata/GeoIPCountryWhois.csv', 'r')
@@ -88,7 +90,7 @@ sqlite_con.commit()
 f.close()
 
 print ("IP2COUNTRY v6")
-f = open('geodata/GeoIPv6CountryCSV.cvs', 'r')
+f = open('geodata/GeoIPv6.csv', 'r')
 i = 0
 j = 0
 for line in f:

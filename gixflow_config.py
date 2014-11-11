@@ -1,7 +1,7 @@
 """
 gixglow_config.py
 Created by Daniel Piekacz on 2014-06-01.
-Updated on 2014-06-15.
+Updated on 2014-11-11.
 https://gixtools.net
 """
 #
@@ -62,10 +62,8 @@ config["http_ipv6"] = "2001:db8::ffff"
 
 # Enable SSL support.
 config["http_ssl_enable"] = False
-config["http_ssl_cert"] = "web/gixflow.crt"
-config["http_ssl_key"] = "web/gixflow.pem"
+config["http_ssl_cert"] = "/opt/gixflow/web/gixflow.crt"
+config["http_ssl_key"] = "/opt/gixflow/web/gixflow.pem"
 
 # Paths to web files.
-config["http_file_stats"] = 'web/stats.html'
-config["http_file_jquery"] = 'web/jquery-1.11.1.min.js'
-config["http_file_highcharts"] = 'web/highcharts.js'
+config["http_file_stats"] = "/opt/gixflow/web/stats.html"

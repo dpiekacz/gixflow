@@ -3,6 +3,10 @@ Version explained:
  minor : increase on new features
  bug   : increase on bug fixes
 
+Version 0.4.1 - 11th October 2014
+ * Adding support for "Domain ID" field in templates. A template with the same ID but different Domain ID will not override the existing one.
+ * Replacing jquery.js and highcharts.js libraries with files served from CDNs.
+
 Version 0.4.0 - 14th June 2014
  * Adding realtime graphs for:
     - total bandwidth of TCP/UDP/ICMP/IPv6/OTHER traffic
