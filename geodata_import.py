@@ -3,12 +3,15 @@
 """
 geodata_import.py
 Created by Daniel Piekacz on 2014-06-07.
-Updated on 2014-11-11.
+Updated on 2014-11-12.
 https://gixtools.net
 """
+import os
 import string
 import netaddr
 import sqlite3
+
+os.remove("db/geodata.db")
 
 sqlite_con = sqlite3.connect("db/geodata.db")
 sqlite_cur = sqlite_con.cursor()
@@ -40,18 +43,27 @@ for line in f:
 sqlite_con.commit()
 f.close()
 
-""" Commas are not removed from companies' names, so csv is not easy to import.
 print ("IP2ASN v6")
 f = open('geodata/GeoIPASNum2v6.csv', 'r')
 i = 0
 j = 0
 for line in f:
-    x1 = string.split(line, ",")
-    iprange = netaddr.IPRange(x1[0].strip('"'), x1[1].strip('"'))
-    x2 = x1[4].strip("\n").strip('"')
-    x3 = string.find(x2, " ")
-    asn = int(x2[2:x3])
-    name = x2[x3 + 1:]
+    x0 = string.find(line, ", 2")
+
+    # workaround for one line "AS29062 VOKS ISP, 2C, 2a00:6180::, 2a00:6180:ffff:ffff:ffff:ffff:ffff:ffff, 32"
+    if line[x0 + 3] != "C":
+        x1a = line[0:x0 - 1]
+        x1b = line[x0 + 2:].strip('\n')
+    else:
+        x1a = line[0:x0 + 4]
+        x1b = line[x0 + 6:].strip('\n')
+
+    x2 = string.find(x1a, " ")
+    asn = int(x1a[2:x2])
+    name = x1a[x2 + 1:]
+
+    x3 = string.split(x1b, ",")
+    iprange = netaddr.IPRange(x3[0].strip(' '), x3[1].strip(' '))
 
     for net in iprange.cidrs():
         ipnet = str(net)
@@ -65,7 +77,6 @@ for line in f:
 
 sqlite_con.commit()
 f.close()
-"""
 
 print ("IP2COUNTRY v4")
 f = open('geodata/GeoIPCountryWhois.csv', 'r')
@@ -96,7 +107,7 @@ j = 0
 for line in f:
     x1 = string.split(line, ",")
     iprange = netaddr.IPRange(x1[0].strip(' ').strip('"'), x1[1].strip(' ').strip('"'))
-    country = x1[4].strip('"').strip(' ')
+    country = x1[4].strip(' ').strip('"')
 
     for net in iprange.cidrs():
         ipnet = str(net)

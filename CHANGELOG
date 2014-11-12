@@ -3,9 +3,11 @@ Version explained:
  minor : increase on new features
  bug   : increase on bug fixes
 
-Version 0.4.1 - 11th October 2014
+Version 0.4.1 - 11/12th October 2014
  * Adding support for "Domain ID" field in templates. A template with the same ID but different Domain ID will not override the existing one.
  * Replacing jquery.js and highcharts.js libraries with files served from CDNs.
+ * Adding a script to generate a SQLite3 databases from MaxMind geo data files.
+ * Updating gixflow.db file.
 
 Version 0.4.0 - 14th June 2014
  * Adding realtime graphs for:
