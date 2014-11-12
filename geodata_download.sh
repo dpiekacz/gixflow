@@ -14,4 +14,4 @@ wget http://geolite.maxmind.com/download/geoip/database/GeoIPv6.csv.gz
 unzip GeoIPASNum2.zip
 unzip GeoIPASNum2v6.zip
 unzip GeoIPCountryCSV.zip
-guzip -d GeoIPv6.csv.gz
+gunzip -d GeoIPv6.csv.gz
