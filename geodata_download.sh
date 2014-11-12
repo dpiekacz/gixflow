@@ -5,7 +5,7 @@
 # Updated on 2014-11-11.
 # https://gixtools.net
 #
-cd geodata
+mkdir geodata && cd geodata
 wget http://download.maxmind.com/download/geoip/database/asnum/GeoIPASNum2.zip
 wget http://download.maxmind.com/download/geoip/database/asnum/GeoIPASNum2v6.zip
 wget http://geolite.maxmind.com/download/geoip/database/GeoIPCountryCSV.zip
