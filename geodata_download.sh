@@ -6,10 +6,10 @@
 # https://gixtools.net
 #
 mkdir geodata && cd geodata
-wget http://download.maxmind.com/download/geoip/database/asnum/GeoIPASNum2.zip
-wget http://download.maxmind.com/download/geoip/database/asnum/GeoIPASNum2v6.zip
-wget http://geolite.maxmind.com/download/geoip/database/GeoIPCountryCSV.zip
-wget http://geolite.maxmind.com/download/geoip/database/GeoIPv6.csv.gz
+wget https://download.maxmind.com/download/geoip/database/asnum/GeoIPASNum2.zip
+wget https://download.maxmind.com/download/geoip/database/asnum/GeoIPASNum2v6.zip
+wget https://geolite.maxmind.com/download/geoip/database/GeoIPCountryCSV.zip
+wget https://geolite.maxmind.com/download/geoip/database/GeoIPv6.csv.gz
 
 unzip GeoIPASNum2.zip
 unzip GeoIPASNum2v6.zip
